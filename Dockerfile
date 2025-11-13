@@ -1,24 +1,25 @@
-FROM php:8.2-fpm
+# ---------------------------------------------
+# PHP 8.2 + Node 18 + Composer  (Alpine edition)
+# ---------------------------------------------
+FROM php:8.2-fpm-alpine
 
-# Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
-    git curl zip unzip libpq-dev \
-    && docker-php-ext-install pdo pdo_pgsql
+# 🧰 Base tools & PHP extensions
+RUN apk add --no-cache \
+    git curl zip unzip libpng-dev libjpeg-turbo-dev freetype-dev \
+    libzip-dev postgresql-dev \
+    oniguruma-dev icu-dev bash npm nodejs
 
-# Instalar Composer global
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+# 🧩 Enable PHP extensions
+RUN docker-php-ext-configure zip && \
+    docker-php-ext-install pdo pdo_pgsql mbstring bcmath zip gd
 
-WORKDIR /var/www/html
+# 🎼 Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Copiar todos los archivos del proyecto
-COPY . .
+# 👤 Non-root user
+RUN addgroup -g 1000 www && adduser -G www -u 1000 -D www
+USER www
 
-# Instalar dependencias de Laravel
-RUN composer install --no-interaction --prefer-dist --optimize-autoloader
-
-# Permisos correctos
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
-
-# Iniciar PHP-FPM
+WORKDIR /var/www
+EXPOSE 9000
 CMD ["php-fpm"]

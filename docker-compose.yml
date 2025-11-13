@@ -4,42 +4,28 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: case-app
-    restart: unless-stopped
-    working_dir: /var/www/html
     volumes:
-      - ./:/var/www/html
+      - ./:/var/www
+    ports:
+      - "9000:9000"
+      - "5173:5173"
     networks:
       - case-network
     depends_on:
       - case-db
 
-  case-vite:
-    image: node:20
-    container_name: case-vite
-    working_dir: /var/www/html
-    command: sh -c "npm ci && npm run dev"
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./:/var/www/html
-    networks:
-      - case-network
-    depends_on:
-      - case-app
-
   case-nginx:
-    image: nginx:latest
+    image: nginx:alpine
     container_name: case-nginx
-    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
-      - ./:/var/www/html
+      - ./:/var/www
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
-    networks:
-      - case-network
     depends_on:
       - case-app
+    networks:
+      - case-network
 
   case-db:
     image: postgres:16
@@ -72,6 +58,8 @@ services:
 
 networks:
   case-network:
+    driver: bridge
 
 volumes:
   case_data:
+    driver: local
