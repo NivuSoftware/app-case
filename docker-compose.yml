@@ -6,6 +6,7 @@ services:
     container_name: case-app
     volumes:
       - ./:/var/www
+      - ./vendor:/var/www/vendor
     ports:
       - "9000:9000"
       - "5173:5173"

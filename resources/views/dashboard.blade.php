@@ -34,7 +34,7 @@
                 </a>
 
                 <!-- Inventario -->
-                <a href="#"
+                <a href="{{ route('inventario.index') }}"
                    class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
                           hover:border-blue-400 hover:shadow-lg transition">
                     <div class="flex flex-col items-center text-center">
@@ -75,6 +75,29 @@
                         </p>
                     </div>
                 </a>
+
+                <!-- Proveedores -->
+                <a href="#"
+                class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
+                        hover:border-blue-400 hover:shadow-lg transition">
+                    <div class="flex flex-col items-center text-center">
+
+                        <svg xmlns="http://www.w3.org/2000/svg"
+                            class="h-12 w-12 text-blue-700 group-hover:text-blue-800 transition"
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                                d="M16 11V7a4 4 0 00-8 0v4M5 11h14l-1 9H6l-1-9zm7 4v4m-3-4h6" />
+                        </svg>
+
+                        <h3 class="mt-4 text-lg font-semibold text-blue-900">
+                            Proveedores
+                        </h3>
+                        <p class="text-sm text-blue-700/70 mt-1">
+                            Registro y control de proveedores
+                        </p>
+                    </div>
+                </a>
+
 
                 <!-- Reportes -->
                 <a href="#"

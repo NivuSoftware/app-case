@@ -15,11 +15,23 @@
 
                 <!-- Menu izquierdo en desktop -->
                 <div class="hidden sm:flex space-x-6">
+
+                    <!-- Dashboard -->
                     <a href="{{ route('dashboard') }}"
                        class="text-blue-100 text-sm font-medium hover:text-white transition
                               {{ request()->routeIs('dashboard') ? 'underline underline-offset-4 text-white' : '' }}">
                         Dashboard
                     </a>
+
+                    <!-- Usuarios (SOLO ADMIN) -->
+                    @role('admin')
+                    <a href="{{ route('usuarios.index') }}"
+                       class="text-blue-100 text-sm font-medium hover:text-white transition
+                              {{ request()->routeIs('usuarios.*') ? 'underline underline-offset-4 text-white' : '' }}">
+                        Usuarios
+                    </a>
+                    @endrole
+
                 </div>
             </div>
 
@@ -84,11 +96,23 @@
     <!-- Mobile Menu -->
     <div :class="{ 'block': open, 'hidden': ! open }" class="hidden sm:hidden bg-blue-700">
         <div class="pt-3 pb-3 space-y-1">
+
+            <!-- Dashboard -->
             <a href="{{ route('dashboard') }}"
                class="block px-4 py-2 text-blue-100 hover:bg-blue-600 hover:text-white
                       {{ request()->routeIs('dashboard') ? 'bg-blue-600 text-white' : '' }}">
                 Dashboard
             </a>
+
+            <!-- Usuarios (SOLO ADMIN) -->
+            @role('admin')
+            <a href="{{ route('usuarios.index') }}"
+               class="block px-4 py-2 text-blue-100 hover:bg-blue-600 hover:text-white
+                      {{ request()->routeIs('usuarios.*') ? 'bg-blue-600 text-white' : '' }}">
+                Usuarios
+            </a>
+            @endrole
+
         </div>
 
         <!-- Mobile user -->
