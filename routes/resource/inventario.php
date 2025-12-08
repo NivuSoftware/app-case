@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\Inventory\InventoryController;
 
 /*
 |--------------------------------------------------------------------------
@@ -19,12 +19,11 @@ Route::prefix('inventario')->group(function () {
     Route::get('/stock', [InventoryController::class, 'viewStock'])
         ->name('inventario.stock');
 
-
-/*
-|--------------------------------------------------------------------------
-| RUTAS FUNCIONALES (JSON: CRUD + STOCK)
-|--------------------------------------------------------------------------
-*/
+    /*
+    |--------------------------------------------------------------------------
+    | RUTAS FUNCIONALES (JSON: CRUD + STOCK)
+    |--------------------------------------------------------------------------
+    */
 
     // Listar inventario (JSON)
     Route::get('/list', [InventoryController::class, 'index']);
@@ -52,4 +51,14 @@ Route::prefix('inventario')->group(function () {
 
     // Disminuir stock
     Route::post('/decrease', [InventoryController::class, 'decreaseStock']);
+
+    // Ajustar stock (valor absoluto con registro en ajustes_inventario)
+    Route::post('/adjust', [InventoryController::class, 'adjustStock'])
+        ->name('inventario.adjust');
+
+    Route::get('/historial', [InventoryController::class, 'viewHistory'])
+    ->name('inventario.historial');
+
+    Route::get('/historial/data', [InventoryController::class, 'adjustmentsHistory']);
+
 });

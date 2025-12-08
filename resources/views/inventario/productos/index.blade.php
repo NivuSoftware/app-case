@@ -7,7 +7,7 @@
             </h2>
 
             <button 
-                onclick="history.back()"
+                onclick="window.location.href='{{ route('inventario.index') }}'"
                 class="text-blue-700 hover:text-blue-900 transition flex items-center space-x-1"
                 title="Regresar"
             >   
@@ -254,15 +254,18 @@
         }
 
         function aplicarFiltros() {
-            const texto = document.getElementById("buscar-input").value.toLowerCase();
+            const texto = document.getElementById("buscar-input").value.trim().toLowerCase();
             const categoria = document.getElementById("categoria-select").value;
+
+            const norm = (v) => (v ?? "").toString().toLowerCase();
 
             let filtrados = PRODUCTOS;
 
-            if (texto.trim() !== "") {
+            if (texto !== "") {
                 filtrados = filtrados.filter(p =>
-                    p.nombre.toLowerCase().includes(texto) ||
-                    (p.codigo_interno ?? "").toLowerCase().includes(texto)
+                    norm(p.nombre).includes(texto) ||
+                    norm(p.codigo_interno).includes(texto) ||
+                    norm(p.codigo_barras).includes(texto)
                 );
             }
 
@@ -275,6 +278,7 @@
 
             renderPagina();
         }
+
 
         // ==============================
         // Crear Producto

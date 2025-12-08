@@ -8,7 +8,7 @@
             </h2>
 
             <button 
-                onclick="history.back()"
+                onclick="window.location.href='{{ route('inventario.index') }}'"
                 class="text-blue-700 hover:text-blue-900 transition flex items-center"
             >
                 <x-heroicon-s-arrow-left class="w-6 h-6 mr-1" />
@@ -100,6 +100,19 @@
                                 <x-heroicon-s-minus class="w-5 h-5 mr-1" /> Disminuir
                             </button>
 
+                            <button 
+                                onclick="openAdjust()"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded flex items-center">
+                                <x-heroicon-s-adjustments-horizontal class="w-5 h-5 mr-1" /> Ajustar
+                            </button>
+
+                            <button 
+                                onclick="goToHistory()"
+                                class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded flex items-center">
+                                {{-- Si tienes este ícono, bien; si no, puedes dejar solo el texto --}}
+                                <x-heroicon-s-clock class="w-5 h-5 mr-1" /> Ver movimientos
+                            </button>
+
                         </div>
 
                     </div>
@@ -116,6 +129,7 @@
     ============================= --}}
     @include('inventario.stock.modals.increase')
     @include('inventario.stock.modals.decrease')
+    @include('inventario.stock.modals.adjust')
 
 
 {{-- ===========================================================
@@ -217,11 +231,13 @@ function verDetalle(id) {
                 MODALES (OPEN)
 ======================================================= */
 function openIncrease() {
+    if (!seleccion) return;
     document.getElementById("increase-cantidad").value = "";
     document.getElementById("modal-increase").classList.remove("hidden");
 }
 
 function openDecrease() {
+    if (!seleccion) return;
     document.getElementById("decrease-cantidad").value = "";
     document.getElementById("current-stock").innerText = seleccion.stock_actual;
     document.getElementById("modal-decrease").classList.remove("hidden");
@@ -239,10 +255,117 @@ function closeDecrease() {
 }
 
 /* =======================================================
-                SUBMIT INCREASE
+                MODAL AJUSTE (OPEN/CLOSE)
+======================================================= */
+function openAdjust() {
+    if (!seleccion) return;
+
+    document.getElementById("adjust-current").innerText = seleccion.stock_actual;
+    document.getElementById("adjust-nuevo").value = seleccion.stock_actual;
+    document.getElementById("adjust-motivo").value = "";
+    document.getElementById("modal-adjust").classList.remove("hidden");
+}
+
+function closeAdjust() {
+    document.getElementById("modal-adjust").classList.add("hidden");
+}
+
+/* =======================================================
+                SUBMIT ADJUST (SweetAlert)
+======================================================= */
+function submitAdjust(e) {
+    e.preventDefault();
+
+    if (!seleccion) return;
+
+    const nuevoStock = parseInt(document.getElementById("adjust-nuevo").value, 10);
+    const motivo = document.getElementById("adjust-motivo").value || null;
+
+    if (isNaN(nuevoStock) || nuevoStock < 0) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Dato inválido',
+            text: 'El nuevo stock debe ser un número entero mayor o igual a 0.'
+        });
+        return;
+    }
+
+    Swal.fire({
+        title: 'Guardando ajuste...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    fetch(`/inventario/adjust`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').content
+        },
+        body: JSON.stringify({
+            producto_id: seleccion.producto_id,
+            bodega_id: seleccion.bodega_id,
+            percha_id: seleccion.percha_id,
+            nuevo_stock: nuevoStock,
+            motivo: motivo
+        })
+    })
+    .then(r => {
+        if (!r.ok) {
+            return r.json().then(j => { throw j; });
+        }
+        return r.json();
+    })
+    .then((resp) => {
+        Swal.fire({
+            icon: 'success',
+            title: 'Ajuste guardado',
+            text: resp.message || 'El stock se actualizó correctamente.',
+            timer: 2500,
+            showConfirmButton: false
+        });
+
+        closeAdjust();
+        cargarStock();
+        setTimeout(() => verDetalle(seleccion.id), 200);
+    })
+    .catch(err => {
+        console.error(err);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: err.message || 'Error al ajustar el stock.'
+        });
+    });
+}
+
+/* =======================================================
+                SUBMIT INCREASE (SweetAlert)
 ======================================================= */
 function submitIncrease(e) {
     e.preventDefault();
+
+    if (!seleccion) return;
+
+    const cantidad = parseInt(document.getElementById("increase-cantidad").value, 10);
+    if (isNaN(cantidad) || cantidad < 1) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Dato inválido',
+            text: 'La cantidad debe ser un entero mayor o igual a 1.'
+        });
+        return;
+    }
+
+    Swal.fire({
+        title: 'Actualizando stock...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
 
     fetch(`/inventario/increase`, {
         method: "POST",
@@ -254,22 +377,63 @@ function submitIncrease(e) {
             producto_id: seleccion.producto_id,
             bodega_id: seleccion.bodega_id,
             percha_id: seleccion.percha_id,
-            cantidad: document.getElementById("increase-cantidad").value
+            cantidad: cantidad
         })
     })
-    .then(r => r.json())
+    .then(r => {
+        if (!r.ok) {
+            return r.json().then(j => { throw j; });
+        }
+        return r.json();
+    })
     .then(() => {
+        Swal.fire({
+            icon: 'success',
+            title: 'Stock aumentado',
+            text: 'El stock se aumentó correctamente.',
+            timer: 2200,
+            showConfirmButton: false
+        });
+
         closeIncrease();
         cargarStock();
         setTimeout(() => verDetalle(seleccion.id), 200);
+    })
+    .catch(err => {
+        console.error(err);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: err.message || 'Error al aumentar el stock.'
+        });
     });
 }
 
 /* =======================================================
-                SUBMIT DECREASE
+                SUBMIT DECREASE (SweetAlert)
 ======================================================= */
 function submitDecrease(e) {
     e.preventDefault();
+
+    if (!seleccion) return;
+
+    const cantidad = parseInt(document.getElementById("decrease-cantidad").value, 10);
+    if (isNaN(cantidad) || cantidad < 1) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Dato inválido',
+            text: 'La cantidad debe ser un entero mayor o igual a 1.'
+        });
+        return;
+    }
+
+    Swal.fire({
+        title: 'Actualizando stock...',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
 
     fetch(`/inventario/decrease`, {
         method: "POST",
@@ -281,17 +445,58 @@ function submitDecrease(e) {
             producto_id: seleccion.producto_id,
             bodega_id: seleccion.bodega_id,
             percha_id: seleccion.percha_id,
-            cantidad: document.getElementById("decrease-cantidad").value
+            cantidad: cantidad
         })
     })
-    .then(r => r.json())
+    .then(r => {
+        if (!r.ok) {
+            return r.json().then(j => { throw j; });
+        }
+        return r.json();
+    })
     .then(() => {
+        Swal.fire({
+            icon: 'success',
+            title: 'Stock disminuido',
+            text: 'El stock se disminuyó correctamente.',
+            timer: 2200,
+            showConfirmButton: false
+        });
+
         closeDecrease();
         cargarStock();
         setTimeout(() => verDetalle(seleccion.id), 200);
+    })
+    .catch(err => {
+        console.error(err);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: err.message || 'Error al disminuir el stock.'
+        });
     });
 }
 
+const HISTORIAL_URL = "{{ route('inventario.historial') }}";
+
+/* =======================================================
+                IR A HISTORIAL
+======================================================= */
+function goToHistory() {
+    if (!seleccion) return;
+
+    const params = new URLSearchParams({
+        producto_id: seleccion.producto_id,
+        bodega_id:   seleccion.bodega_id,
+        percha_id:   seleccion.percha_id || '',
+        producto_nombre: seleccion.producto?.nombre || '',
+        bodega_nombre:   seleccion.bodega?.nombre || '',
+        percha_codigo:   (seleccion.percha && seleccion.percha.codigo) ? seleccion.percha.codigo : ''
+    });
+
+    window.location.href = `${HISTORIAL_URL}?${params.toString()}`;
+}
 </script>
+
 
 </x-app-layout>

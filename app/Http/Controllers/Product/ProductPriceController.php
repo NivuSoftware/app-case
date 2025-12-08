@@ -44,7 +44,6 @@ class ProductPriceController extends Controller
             'precio_por_caja' => 'nullable|numeric|min:0',
             'unidades_por_caja' => 'nullable|integer|min:1',
 
-            'moneda' => 'required|string|max:10',
         ]);
 
         return response()->json($this->service->create($data), 201);
@@ -61,8 +60,6 @@ class ProductPriceController extends Controller
 
             'precio_por_caja' => 'nullable|numeric|min:0',
             'unidades_por_caja' => 'nullable|integer|min:1',
-
-            'moneda' => 'sometimes|string|max:10',
         ]);
 
         return response()->json($this->service->update($id, $data));

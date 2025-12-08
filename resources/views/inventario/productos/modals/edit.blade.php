@@ -78,9 +78,11 @@
                      class="w-full border rounded-md px-3 py-2" placeholder="Ej. 1.50">
             </div>
             <div>
-              <label class="text-xs text-slate-700">Moneda *</label>
-              <input name="moneda" id="edit-moneda" value="USD"
-                     class="w-full border rounded-md px-3 py-2" placeholder="USD">
+              <label class="text-xs text-slate-700">Moneda</label>
+                <div class="w-full border rounded-md px-3 py-2 bg-gray-100 text-gray-700 text-sm">
+                  USD
+                </div>
+                <input type="hidden" name="moneda" id="edit-moneda" value="USD">
             </div>
           </div>
 

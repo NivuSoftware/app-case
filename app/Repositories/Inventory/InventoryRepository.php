@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Repositories;
+namespace App\Repositories\Inventory;
 
-use App\Models\Inventory;
+use App\Models\Inventory\Inventory;
 
 class InventoryRepository
 {
@@ -37,10 +37,10 @@ class InventoryRepository
     public function getByLocation($productoId, $bodegaId, $perchaId)
     {
         return Inventory::where([
-                'producto_id' => $productoId,
-                'bodega_id' => $bodegaId,
-                'percha_id' => $perchaId
-            ])->first();
+            'producto_id' => $productoId,
+            'bodega_id'   => $bodegaId,
+            'percha_id'   => $perchaId,
+        ])->first();
     }
 
     public function create(array $data)
@@ -59,18 +59,30 @@ class InventoryRepository
         return $inventory->delete();
     }
 
-    // Métodos útiles para stock
-    public function increaseStock(Inventory $inventory, int $cantidad)
+ 
+
+    public function increaseStock(Inventory $inventory, int $cantidad): Inventory
     {
         $inventory->stock_actual += $cantidad;
         $inventory->save();
+
         return $inventory;
     }
 
-    public function decreaseStock(Inventory $inventory, int $cantidad)
+    public function decreaseStock(Inventory $inventory, int $cantidad): Inventory
     {
         $inventory->stock_actual -= $cantidad;
         $inventory->save();
+
+        return $inventory;
+    }
+
+   
+    public function adjustStock(Inventory $inventory, int $nuevoStock): Inventory
+    {
+        $inventory->stock_actual = $nuevoStock;
+        $inventory->save();
+
         return $inventory;
     }
 }

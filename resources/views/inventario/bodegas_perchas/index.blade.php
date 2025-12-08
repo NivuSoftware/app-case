@@ -8,7 +8,7 @@
             </h2>
 
             <button 
-                onclick="history.back()"
+                onclick="window.location.href='{{ route('inventario.index') }}'"
                 class="text-blue-700 hover:text-blue-900 transition flex items-center space-x-1"
                 title="Regresar"
             >   

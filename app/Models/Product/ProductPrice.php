@@ -19,6 +19,10 @@ class ProductPrice extends Model
         'moneda',
     ];
 
+    protected $attributes = [
+        'moneda' => 'USD',
+    ];
+
     // RELACIONES
     public function product()
     {

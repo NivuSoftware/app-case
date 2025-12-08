@@ -67,8 +67,11 @@
               <input type="number" step="0.01" min="0" name="precio_unitario" class="w-full border rounded-md px-3 py-2" placeholder="Ej. 1.50" required>
             </div>
             <div>
-              <label class="text-xs text-slate-700">Moneda *</label>
-              <input name="moneda" value="USD" class="w-full border rounded-md px-3 py-2" placeholder="USD" required>
+              <label class="text-xs text-slate-700">Moneda </label>
+              <div class="w-full border rounded-md px-3 py-2 bg-gray-100 text-gray-700 text-sm">
+                    USD
+              </div>
+              <input type="hidden" name="moneda" value="USD">            
             </div>
           </div>
 

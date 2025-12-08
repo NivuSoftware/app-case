@@ -30,12 +30,21 @@ class ProductPriceService
 
     public function create(array $data)
     {
+        if (empty($data['moneda'])) {
+            $data['moneda'] = 'USD';
+        }
+
         return $this->repo->create($data);
     }
 
     public function update($id, array $data)
     {
         $price = $this->repo->find($id);
+
+        if (empty($data['moneda'])) {
+            $data['moneda'] = $price->moneda ?? 'USD';
+        }
+
         return $this->repo->update($price, $data);
     }
 
