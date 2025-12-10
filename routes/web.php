@@ -31,7 +31,6 @@ if (! function_exists('require_route_dir')) {
     }
 }
 
-// ⬅⬅⬅ AQUI VIENE LA SOLUCIÓN
 Route::middleware(['auth'])->group(function () {
     require_route_dir(__DIR__.'/resource');
 });

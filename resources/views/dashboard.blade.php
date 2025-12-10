@@ -12,7 +12,7 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
 
                 <!-- Facturar -->
-                <a href="#"
+                <a href="{{ route('ventas.index') }}"
                    class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
                           hover:border-blue-400 hover:shadow-lg transition">
                     <div class="flex flex-col items-center text-center">
