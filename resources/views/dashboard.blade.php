@@ -77,7 +77,7 @@
                 </a>
 
                 <!-- Proveedores -->
-                <a href="#"
+                <a href="{{ route('proveedores.menu') }}"
                 class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
                         hover:border-blue-400 hover:shadow-lg transition">
                     <div class="flex flex-col items-center text-center">

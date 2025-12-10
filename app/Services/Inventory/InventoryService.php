@@ -18,7 +18,7 @@ class InventoryService
         InventoryRepository $repository,
         InventoryAdjustmentRepository $adjustmentRepository
     ) {
-        $this->repository = $repository;
+        $this->repository           = $repository;
         $this->adjustmentRepository = $adjustmentRepository;
     }
 
@@ -69,23 +69,65 @@ class InventoryService
     }
 
     /* =========================================================
-        OPERACIONES DE STOCK
+        HELPERS INTERNOS
        ========================================================= */
 
-    public function increaseStock($productoId, $bodegaId, $perchaId, $cantidad)
+    /**
+     * Obtiene el registro de inventario para la ubicación,
+     * y si no existe LO CREA con stock 0.
+     */
+    protected function getOrCreateLocation($productoId, $bodegaId, $perchaId): Inventory
     {
         /** @var Inventory|null $inv */
         $inv = $this->repository->getByLocation($productoId, $bodegaId, $perchaId);
 
-        if (!$inv) {
-            throw new Exception("No se encontró inventario para esa ubicación");
+        if (! $inv) {
+            $inv = $this->repository->create([
+                'producto_id'     => $productoId,
+                'bodega_id'       => $bodegaId,
+                'percha_id'       => $perchaId,
+                'stock_actual'    => 0,
+                'stock_reservado' => 0,
+            ]);
         }
 
+        return $inv;
+    }
+
+    /* =========================================================
+        OPERACIONES DE STOCK
+       ========================================================= */
+
+    /**
+     * Aumenta stock en una ubicación.
+     * - Si no existe inventario para esa ubicación, lo crea.
+     * - Registra el movimiento en ajustes_inventario con un motivo.
+     *
+     * $motivo:
+     *   - null  => "Aumento de stock"
+     *   - "Compra #ID" => cuando viene desde una compra
+     */
+    public function increaseStock(
+        $productoId,
+        $bodegaId,
+        $perchaId,
+        $cantidad,
+        ?string $motivo = null
+    ) {
         $cantidad = (int) $cantidad;
+        if ($cantidad <= 0) {
+            throw new InvalidArgumentException("La cantidad a aumentar debe ser mayor a 0");
+        }
+
+        // 👉 Aquí ya se crea el inventario si no existía
+        $inv = $this->getOrCreateLocation($productoId, $bodegaId, $perchaId);
+
         $stockInicial = (int) $inv->stock_actual;
 
+        // Actualizar stock
         $inv = $this->repository->increaseStock($inv, $cantidad);
 
+        // Registrar el movimiento en ajustes_inventario (kardex simple)
         $ajuste = $this->adjustmentRepository->create([
             'usuario_id'    => Auth::id(),
             'bodega_id'     => $inv->bodega_id,
@@ -95,7 +137,7 @@ class InventoryService
             'stock_final'   => $inv->stock_actual,
             'diferencia'    => $cantidad,
             'tipo'          => 'positivo',
-            'motivo'        => 'Aumento manual de stock',
+            'motivo'        => $motivo ?: 'Aumento de stock',
         ]);
 
         return [

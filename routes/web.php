@@ -3,13 +3,13 @@
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return redirect()->route('login'); // ⬅ login como pantalla principal
+    return redirect()->route('login');
 });
 
+// Dashboard
 Route::view('dashboard', 'dashboard')
     ->middleware(['auth','verified'])
     ->name('dashboard');
-
 
 /**
  * CARGA AUTOMÁTICA DE RUTAS EN /resource
@@ -31,7 +31,10 @@ if (! function_exists('require_route_dir')) {
     }
 }
 
-require_route_dir(__DIR__.'/resource');
+// ⬅⬅⬅ AQUI VIENE LA SOLUCIÓN
+Route::middleware(['auth'])->group(function () {
+    require_route_dir(__DIR__.'/resource');
+});
 
-// Rutas de autenticación Breeze
+// Rutas auth Breeze
 require __DIR__.'/auth.php';

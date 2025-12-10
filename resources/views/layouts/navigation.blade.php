@@ -40,7 +40,7 @@
 
                 <!-- Nombre del usuario -->
                 <span class="text-sm text-blue-100 font-medium">
-                    {{ Auth::user()->name }}
+                    {{ Auth::user()->name ?? '' }}
                 </span>
 
                 <!-- Dropdown -->
