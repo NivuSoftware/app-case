@@ -37,7 +37,7 @@
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-8rem)] min-h-[620px]">
 
                 {{-- =============== COL IZQUIERDA: BARRA SUPERIOR + CLIENTE + PRODUCTOS =============== --}}
-                <section class="flex-[1.6] flex flex-col gap-4">
+                <section class="flex-[1.6] flex flex-col gap-4 min-h-0">
 
                     {{-- Barra superior --}}
                     <div class="bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3">
@@ -58,28 +58,33 @@
                                 <label class="text-[11px] tracking-wide font-semibold text-slate-500 uppercase">
                                     Fecha de venta
                                 </label>
+
+                                {{-- Muestra solo la fecha (no editable) --}}
+                                <div class="border border-slate-200 rounded-xl bg-slate-50 text-sm h-10 px-3 flex items-center text-slate-800">
+                                    {{ now()->format('d/m/Y') }}
+                                </div>
+
+                                {{-- Campo hidden para que JS/API sigan usando fecha_venta --}}
                                 <input
-                                    type="datetime-local"
+                                    type="hidden"
                                     id="fecha_venta"
-                                    class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm h-10"
                                     value="{{ now()->format('Y-m-d\TH:i') }}"
                                 >
                             </div>
+
 
                             <div class="flex flex-col space-y-1">
                                 <label class="text-[11px] tracking-wide font-semibold text-slate-500 uppercase">
                                     Bodega
                                 </label>
-                                <select
-                                    id="bodega_id"
-                                    class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm h-10"
-                                >
-                                    <option value="">Selecciona una bodega</option>
-                                    @foreach($bodegas as $bodega)
-                                        <option value="{{ $bodega->id }}">{{ $bodega->nombre }}</option>
-                                    @endforeach
-                                </select>
+
+                                <div class="border border-slate-200 rounded-xl bg-slate-50 text-sm h-10 px-3 flex items-center text-slate-800">
+                                    {{ $bodegaSelected->nombre }}
+                                </div>
+
+                                <input type="hidden" id="bodega_id" value="{{ $bodegaSelected->id }}">
                             </div>
+
 
                             <div class="flex flex-col space-y-1">
                                 <label class="text-[11px] tracking-wide font-semibold text-slate-500 uppercase">
@@ -107,7 +112,7 @@
                                     Consumidor final
                                 </p>
                                 <input type="hidden" id="client_id" value="">
-                                <p class="text-[11px] text-slate-400 truncate mt-0.5">
+                                <p id="cliente_identificacion" class="text-[11px] text-slate-400 truncate mt-0.5">
                                     Cédula o RUC aquí
                                 </p>
                             </div>
@@ -149,7 +154,7 @@
                     </div>
 
                     {{-- Tarjeta de productos grande --}}
-                    <div class="bg-white border border-slate-200 rounded-3xl shadow-lg flex flex-col overflow-hidden">
+                    <div class="bg-white border border-slate-200 rounded-3xl shadow-lg flex flex-col overflow-hidden flex-1 min-h-0">
                         {{-- HEADER productos --}}
                         <header class="px-5 pt-4 pb-3 border-b border-slate-100">
                             <h3 class="text-sm font-semibold text-slate-900 text-center mb-3">
@@ -178,16 +183,6 @@
                                         class="hidden border border-slate-200 bg-white rounded-xl shadow-xl text-xs max-h-56 overflow-y-auto mt-1 z-20"
                                     ></div>
                                 </div>
-
-                                {{-- ID manual / debug --}}
-                                <div class="w-24 mt-6">
-                                    <input
-                                        type="number"
-                                        id="item_producto_id"
-                                        class="w-full border-slate-200 rounded-lg text-[11px] px-2 py-1.5 bg-white/70"
-                                        placeholder="ID"
-                                    >
-                                </div>
                             </div>
 
                             {{-- Inputs ocultos para JS actual --}}
@@ -200,15 +195,19 @@
                         </header>
 
                         {{-- LISTA SCROLLABLE --}}
-                        <div class="flex-1 px-5 pb-5 pt-3">
+                        <div class="flex-1 px-5 pb-5 pt-3 min-h-0">
                             <div
-                                class="w-full h-full border border-slate-100 rounded-2xl bg-slate-50/80 overflow-y-auto flex flex-col"
+                                class="w-full h-full border border-slate-100 rounded-2xl bg-slate-50/80 overflow-y-auto"
                             >
-                                <div id="product_list" class="flex-1 divide-y divide-slate-100 text-sm">
+                                <div
+                                    id="product_list"
+                                    data-product-url="{{ url('/productos/list') }}"
+                                    class="divide-y divide-slate-100 text-sm"
+                                >
                                     {{-- Render de productos --}}
                                 </div>
 
-                                <div id="product_list_empty" class="flex-1 flex items-center justify-center">
+                                <div id="product_list_empty" class="py-6 flex items-center justify-center">
                                     <p class="text-[13px] text-slate-400 text-center px-6">
                                         LISTA DE LOS PRODUCTOS. Escribe en el buscador para comenzar a buscar y agregar al carrito.
                                     </p>
@@ -276,10 +275,21 @@
                                     <span>Impuesto</span>
                                     <span id="resumen-impuesto">$ 0.00</span>
                                 </div>
-                                <div class="flex justify-between">
-                                    <span>IVA</span>
-                                    <span id="resumen-iva">$ 0.00</span>
-                                </div>
+                                <div class="flex items-center justify-between">
+                                <label class="inline-flex items-center gap-2 text-[12px] text-slate-700 select-none">
+                                    <input
+                                        id="toggle_iva_global"
+                                        type="checkbox"
+                                        checked
+                                        class="rounded border-slate-300"
+                                    />
+                                    Aplicar IVA (15%)
+                                </label>
+
+                                <span id="resumen-iva">$ 0.00</span>
+                            </div>
+
+
                             </div>
 
                             <div class="flex flex-col space-y-1">
@@ -311,22 +321,38 @@
             @include('sales.partials.payment-modal')
             @include('sales.partials.change-modal')
             @include('sales.partials.client-modal')
+            @include('clients.modals.create')
+
 
         </div>
-    </div>
+        <iframe
+        id="ticketPrintFrame"
+        style="position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;"
+        ></iframe>
 
-    @push('scripts')
         <script>
-            window.SALES_ROUTES = {
-                store: "{{ route('api.ventas.store') }}",
-                productSearch: "{{ url('/productos/list') }}",
-                clientSearch: "{{ route('clients.searchByIdentificacion') }}",
-                clientEmailsBase: "{{ url('/clients') }}",
-            };
-            window.CSRF_TOKEN = "{{ csrf_token() }}";
-            window.AUTH_USER_ID = {{ auth()->id() ?? 'null' }};
+        window.addEventListener('message', (e) => {
+            if (e?.data?.type === 'ticket-printed') {
+            const f = document.getElementById('ticketPrintFrame');
+            if (f) f.src = 'about:blank';
+            }
+        });
         </script>
 
-        @vite('resources/js/sales/pos.js')
-    @endpush
+    </div>
+
+    <script>
+        window.SALES_ROUTES = {
+            store: "{{ route('api.ventas.store') }}",
+            productSearch: "{{ url('/productos/list') }}",
+            clientIndex: "{{ route('clients.index') }}",
+            clientEmailsBase: "{{ url('/clients') }}",
+        };
+        window.CSRF_TOKEN = "{{ csrf_token() }}";
+
+        window.AUTH_USER_ID = @json(auth()->id());
+
+        console.log('[POS] AUTH_USER_ID =', window.AUTH_USER_ID);
+    </script>
+
 </x-app-layout>

@@ -1,4 +1,4 @@
-<div id="modal-create" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center">
+<div id="modal-create" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
   <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl">
     <!-- Header -->
     <div class="px-6 py-4 border-b flex items-center justify-between">
@@ -41,11 +41,21 @@
               </div>
             </div>
 
+            <!-- ✅ Stock mínimo + IVA -->
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="text-xs text-blue-800">Stock mínimo *</label>
                 <input type="number" name="stock_minimo" value="0" min="0" class="w-full border rounded-md px-3 py-2" placeholder="Ej. 20" required>
                 <p class="text-[11px] text-slate-500 mt-1">Te avisaremos cuando el stock baje de este valor.</p>
+              </div>
+
+              <div>
+                <label class="text-xs text-blue-800">IVA del producto (%) *</label>
+                <select name="iva_porcentaje" class="w-full border rounded-md px-3 py-2" required>
+                  <option value="15" selected>15% (Grava IVA)</option>
+                  <option value="0">0% (IVA 0)</option>
+                </select>
+                <p class="text-[11px] text-slate-500 mt-1">Este % viajará al carrito para calcular el IVA por item.</p>
               </div>
             </div>
 
@@ -67,23 +77,23 @@
               <input type="number" step="0.01" min="0" name="precio_unitario" class="w-full border rounded-md px-3 py-2" placeholder="Ej. 1.50" required>
             </div>
             <div>
-              <label class="text-xs text-slate-700">Moneda </label>
+              <label class="text-xs text-slate-700">Moneda</label>
               <div class="w-full border rounded-md px-3 py-2 bg-gray-100 text-gray-700 text-sm">
-                    USD
+                USD
               </div>
-              <input type="hidden" name="moneda" value="USD">            
+              <input type="hidden" name="moneda" value="USD">
             </div>
           </div>
 
           <!-- Descuento por cantidad -->
           <div class="mt-5">
             <label class="inline-flex items-center gap-2 cursor-pointer">
-              <input id="toggle-descuento" type="checkbox" class="rounded border-gray-300">
+              <input id="create-toggle-descuento" type="checkbox" class="rounded border-gray-300">
               <span class="text-sm text-slate-800 font-medium">Activar descuento por cantidad</span>
             </label>
             <p class="text-[11px] text-slate-500 mt-1">Aplica un precio especial cuando compren dentro de un rango de unidades.</p>
 
-            <div id="box-descuento" class="mt-3 grid grid-cols-3 gap-3 opacity-50 pointer-events-none">
+            <div id="create-box-descuento" class="mt-3 grid grid-cols-3 gap-3 opacity-50 pointer-events-none">
               <div>
                 <label class="text-xs text-slate-700">Cant. mín.</label>
                 <input type="number" min="1" name="cantidad_min" class="w-full border rounded-md px-3 py-2" placeholder="Ej. 6" disabled>
@@ -102,12 +112,12 @@
           <!-- Venta por caja -->
           <div class="mt-5">
             <label class="inline-flex items-center gap-2 cursor-pointer">
-              <input id="toggle-caja" type="checkbox" class="rounded border-gray-300">
+              <input id="create-toggle-caja" type="checkbox" class="rounded border-gray-300">
               <span class="text-sm text-slate-800 font-medium">Activar venta por caja</span>
             </label>
             <p class="text-[11px] text-slate-500 mt-1">Define cuántas unidades trae la caja y su precio total.</p>
 
-            <div id="box-caja" class="mt-3 grid grid-cols-2 gap-3 opacity-50 pointer-events-none">
+            <div id="create-box-caja" class="mt-3 grid grid-cols-2 gap-3 opacity-50 pointer-events-none">
               <div>
                 <label class="text-xs text-slate-700">Unidades por caja</label>
                 <input type="number" min="1" name="unidades_por_caja" class="w-full border rounded-md px-3 py-2" placeholder="Ej. 12" disabled>
@@ -119,7 +129,6 @@
             </div>
           </div>
 
-          <!-- Tips -->
           <ul class="mt-4 text-[11px] text-slate-500 space-y-1 list-disc list-inside">
             <li>Si no activas un bloque, esos campos no se guardan.</li>
             <li>El precio por caja se usa primero (cantidad divisible). Lo restante aplica precio por cantidad o unitario.</li>
@@ -137,27 +146,24 @@
 </div>
 
 <script>
-  function openCreateModal() {
-    document.getElementById('modal-create').classList.remove('hidden');
-  }
-  function closeCreateModal() {
-    document.getElementById('modal-create').classList.add('hidden');
-  }
+  // ✅ Solo init toggles del modal CREATE (IDs únicos)
+  (function initCreateToggles() {
+    // anti-doble-bind
+    if (window.__createProductTogglesReady) return;
+    window.__createProductTogglesReady = true;
 
-  // UX: habilitar/inhabilitar bloques
-  (function initCreateToggles(){
-    const tDesc = document.getElementById('toggle-descuento');
-    const boxDesc = document.getElementById('box-descuento');
-    const tCaja = document.getElementById('toggle-caja');
-    const boxCaja = document.getElementById('box-caja');
+    const tDesc = document.getElementById('create-toggle-descuento');
+    const boxDesc = document.getElementById('create-box-descuento');
+    const tCaja = document.getElementById('create-toggle-caja');
+    const boxCaja = document.getElementById('create-box-caja');
 
     const setBlock = (toggle, box) => {
       const inputs = box.querySelectorAll('input');
       if (toggle.checked) {
-        box.classList.remove('opacity-50','pointer-events-none');
-        inputs.forEach(i => i.disabled = false);
+        box.classList.remove('opacity-50', 'pointer-events-none');
+        inputs.forEach(i => (i.disabled = false));
       } else {
-        box.classList.add('opacity-50','pointer-events-none');
+        box.classList.add('opacity-50', 'pointer-events-none');
         inputs.forEach(i => { i.value = ""; i.disabled = true; });
       }
     };

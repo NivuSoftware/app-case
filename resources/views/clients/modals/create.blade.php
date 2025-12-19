@@ -1,6 +1,6 @@
 <div
     id="createClientModal"
-    class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40"
+    class="fixed inset-0 z-50 hidden bg-black/40 flex items-center justify-center"
 >
     <div class="bg-white rounded-lg shadow-lg w-full max-w-lg mx-4">
         {{-- HEADER --}}
@@ -18,7 +18,7 @@
         </div>
 
         {{-- FORM --}}
-        <form method="POST" action="{{ route('clients.store') }}" class="px-4 py-4 space-y-3">
+        <form id="createClientForm" method="POST" action="{{ route('clients.store') }}" class="px-4 py-4 space-y-3">
             @csrf
 
             {{-- campo real que usa el backend --}}

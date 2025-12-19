@@ -247,6 +247,75 @@ class InventoryService
         ];
     }
 
+        /**
+     * Disminuye stock para una VENTA.
+     *
+     * - Si $perchaId es null, busca cualquier inventario de ese producto en esa bodega
+     *   (ignora la percha).
+     * - Si no existe inventario en esa bodega, crea uno con stock 0.
+     * - Permite que el stock quede en negativo (venta sin stock).
+     *
+     * @return bool true  = había stock suficiente antes de la venta
+     *              false = no alcanzaba el stock (se vendió sin stock)
+     */
+    public function decreaseStockForSale(
+        $productoId,
+        $bodegaId,
+        $perchaId,
+        $cantidad,
+        ?int $usuarioId = null,
+        ?int $saleId = null,
+        ?string $numFactura = null
+    ): bool
+    {
+        $cantidad = (int) $cantidad;
+        if ($cantidad <= 0) {
+            throw new InvalidArgumentException("La cantidad a disminuir debe ser mayor a 0");
+        }
+
+        // 1) Buscar inventario
+        if (!is_null($perchaId)) {
+            $inv = $this->repository->getByLocation($productoId, $bodegaId, $perchaId);
+        } else {
+            $inv = Inventory::where('producto_id', $productoId)
+                ->where('bodega_id', $bodegaId)
+                ->orderBy('percha_id')
+                ->first();
+        }
+
+        if (! $inv) {
+            $inv = $this->getOrCreateLocation($productoId, $bodegaId, $perchaId);
+        }
+
+        $stockInicial = (int) $inv->stock_actual;
+        $teniaStock   = $stockInicial >= $cantidad;
+
+        $inv = $this->repository->decreaseStock($inv, $cantidad);
+
+        $usuarioFinal = $usuarioId ?? Auth::id();
+
+        $motivo = 'Disminución por venta';
+        if ($saleId) {
+            $motivo = "Venta #{$saleId}" . ($numFactura ? " ({$numFactura})" : "");
+        }
+
+        $this->adjustmentRepository->create([
+            'usuario_id'    => $usuarioFinal,
+            'bodega_id'     => $inv->bodega_id,
+            'percha_id'     => $inv->percha_id,      
+            'producto_id'   => $inv->producto_id,
+            'stock_inicial' => $stockInicial,
+            'stock_final'   => $inv->stock_actual,
+            'diferencia'    => -$cantidad,
+            'tipo'          => 'negativo',
+            'motivo'        => $motivo,
+        ]);
+
+        return $teniaStock;
+    }
+
+
+
     /**
      * Historial de ajustes de stock por producto/bodega/percha.
      */

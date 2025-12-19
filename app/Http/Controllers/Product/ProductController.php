@@ -43,8 +43,16 @@ class ProductController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    public function index()
+    public function index(Request $request)
     {
+        $bodegaId = $request->query('bodega_id');
+
+        if ($bodegaId) {
+            return response()->json(
+                $this->service->getByBodegaWithStock((int) $bodegaId)
+            );
+        }
+
         return response()->json($this->service->getAll());
     }
 
@@ -64,9 +72,14 @@ class ProductController extends Controller
             'foto_url' => 'nullable|string',
             'unidad_medida' => 'required|string|max:50',
             'stock_minimo' => 'required|integer|min:0',
+
+            // ✅ NUEVO: IVA por producto (0, 15, etc.)
+            'iva_porcentaje' => 'nullable|numeric|min:0|max:100',
+
             'estado' => 'boolean',
         ]);
 
+        // si no viene, deja que el default de DB/service lo maneje (15.00)
         return response()->json($this->service->create($data), 201);
     }
 
@@ -81,6 +94,8 @@ class ProductController extends Controller
             'foto_url' => 'nullable|string',
             'unidad_medida' => 'sometimes|string|max:50',
             'stock_minimo' => 'sometimes|integer|min:0',
+            'iva_porcentaje' => 'nullable|numeric|min:0|max:100',
+
             'estado' => 'boolean',
         ]);
 

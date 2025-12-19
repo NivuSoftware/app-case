@@ -12,6 +12,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('/{id}', [ClientController::class, 'show'])->name('show');
 
+        Route::get('/{id}/emails', [ClientController::class, 'emails'])->name('emails');
+        
         Route::put('/{id}', [ClientController::class, 'update'])->name('update');
         Route::patch('/{id}', [ClientController::class, 'update'])->name('update.partial');
 

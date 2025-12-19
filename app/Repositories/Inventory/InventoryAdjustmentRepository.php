@@ -23,14 +23,11 @@ class InventoryAdjustmentRepository
         return InventoryAdjustment::with(['usuario'])
             ->where('producto_id', $productoId)
             ->where('bodega_id', $bodegaId)
-            ->when($perchaId, function ($q) use ($perchaId) {
-                if ($perchaId) {
-                    $q->where('percha_id', $perchaId);
-                } else {
-                    $q->whereNull('percha_id');
-                }
+            ->when(!is_null($perchaId), function ($q) use ($perchaId) {
+                $q->where('percha_id', $perchaId);
             })
             ->orderBy('created_at', 'desc')
             ->get();
     }
+
 }

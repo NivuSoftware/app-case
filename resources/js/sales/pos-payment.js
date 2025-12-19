@@ -85,33 +85,40 @@ async function submitSaleFromModal() {
 
     const { total } = getTotals();
 
-    const bodegaId = document.getElementById('bodega_id')?.value;
-    const fechaVenta = document.getElementById('fecha_venta')?.value;
+    const bodegaId      = document.getElementById('bodega_id')?.value;
+    const fechaVenta    = document.getElementById('fecha_venta')?.value;
     const tipoDocumento = document.getElementById('tipo_documento')?.value || 'FACTURA';
-    const numFactura = document.getElementById('num_factura')?.value || null;
-    const observacionesVenta = document.getElementById('sale_observaciones')?.value || null;
+    const numFactura    = document.getElementById('num_factura')?.value || null;
+    const observacionesVenta =
+        document.getElementById('sale_observaciones')?.value || null;
 
     if (!bodegaId || !fechaVenta) {
         showSaleAlert('Completa los datos de la venta.', true);
         return;
     }
 
-    const recibido = parseFloat(document.getElementById('payment_modal_monto_recibido')?.value || '0');
+    const recibido = parseFloat(
+        document.getElementById('payment_modal_monto_recibido')?.value || '0'
+    );
     if (recibido < total) {
         showSaleAlert('El monto recibido no puede ser menor al total.', true);
         return;
     }
 
-    const metodoSelect = document.getElementById('payment_modal_metodo');
-    const metodo = metodoSelect?.value;
-    const paymentMethodId = metodoSelect?.selectedOptions[0]?.dataset.id || null;
+    const metodoSelect   = document.getElementById('payment_modal_metodo');
+    const metodo         = metodoSelect?.value;
+    const paymentMethodId =
+        metodoSelect?.selectedOptions[0]?.dataset.id || null;
 
-    const referencia = document.getElementById('payment_modal_referencia')?.value || null;
-    const observacionesPago = document.getElementById('payment_modal_observaciones')?.value || null;
+    const referencia =
+        document.getElementById('payment_modal_referencia')?.value || null;
+    const observacionesPago =
+        document.getElementById('payment_modal_observaciones')?.value || null;
 
-    const clientId = document.getElementById('client_id')?.value || null;
+    const clientId    = document.getElementById('client_id')?.value || null;
     const emailSelect = document.getElementById('cliente_email');
-    const emailDestino = emailSelect && emailSelect.value ? emailSelect.value : null;
+    const emailDestino =
+        emailSelect && emailSelect.value ? emailSelect.value : null;
 
     const payload = {
         client_id: clientId || null,
@@ -121,13 +128,13 @@ async function submitSaleFromModal() {
         tipo_documento: tipoDocumento,
         num_factura: numFactura,
         observaciones: observacionesVenta,
-        items: cart.map(item => ({
+        items: cart.map((item) => ({
             producto_id: item.producto_id,
             descripcion: item.descripcion,
             cantidad: item.cantidad,
             precio_unitario: item.precio_unitario,
             descuento: item.descuento,
-            percha_id: null, 
+            percha_id: null,
         })),
         payment: {
             metodo,
@@ -140,26 +147,49 @@ async function submitSaleFromModal() {
         email_destino: emailDestino,
     };
 
+    // =======================
+    //  RUTA DE LA VENTA
+    // =======================
     const routes = window.SALES_ROUTES || {};
-    if (!routes.store) {
-        showSaleAlert('Ruta de venta no configurada.', true);
+    console.log('[POS] SALES_ROUTES en submitSaleFromModal:', routes);
+
+    // Fallback: si por alguna razón no se setea, usamos /api/ventas
+    let url = routes.store || '/api/ventas';
+
+    if (!url) {
+        showSaleAlert('Ruta de venta no configurada (ni siquiera fallback).', true);
         return;
     }
 
+    // =======================
+    //  CSRF TOKEN
+    // =======================
+    const csrfToken =
+        window.CSRF_TOKEN ||
+        document
+            .querySelector('meta[name="csrf-token"]')
+            ?.getAttribute('content') ||
+        '';
+
     try {
-        const res = await fetch(routes.store, {
+        const res = await fetch(url, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': window.CSRF_TOKEN,
-                'Accept': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken,
             },
             body: JSON.stringify(payload),
         });
 
         if (res.status === 422) {
             const data = await res.json();
-            showSaleAlert(data?.message || 'Error de validación en la venta.', true);
+            showSaleAlert(
+                data?.message || 'Error de validación en la venta.',
+                true
+            );
             return;
         }
 
@@ -170,9 +200,19 @@ async function submitSaleFromModal() {
 
         const data = await res.json();
 
-        // Aquí backend debería: guardar venta, enviar a SRI, enviar correo, etc.
-        // Front solo muestra éxito y cambio.
-        showSaleAlert(data.message || 'Venta registrada correctamente.');
+        showSaleAlert(
+            data.message || 'Venta registrada correctamente.'
+        );
+
+        const saleId = data?.data?.id;
+        if (saleId) {
+        const frame = document.getElementById('ticketPrintFrame');
+        if (frame) {
+            frame.src = `/ventas/${saleId}/ticket?autoprint=1&embed=1&ts=${Date.now()}`;
+        }
+        }
+
+
 
         const cambio = recibido - total;
 
@@ -181,15 +221,22 @@ async function submitSaleFromModal() {
 
         // Limpiar carrito y formularios
         clearCart();
-        document.getElementById('sale_observaciones') && (document.getElementById('sale_observaciones').value = '');
-        document.getElementById('payment_modal_referencia') && (document.getElementById('payment_modal_referencia').value = '');
-        document.getElementById('payment_modal_observaciones') && (document.getElementById('payment_modal_observaciones').value = '');
+        const obsVenta = document.getElementById('sale_observaciones');
+        if (obsVenta) obsVenta.value = '';
 
+        const refPago = document.getElementById('payment_modal_referencia');
+        if (refPago) refPago.value = '';
+
+        const obsPago = document.getElementById('payment_modal_observaciones');
+        if (obsPago) obsPago.value = '';
     } catch (e) {
         console.error(e);
         showSaleAlert('Error de comunicación con el servidor.', true);
     }
 }
+
+
+
 
 export function initPayment() {
     const btnOpen = document.getElementById('btn-open-payment-modal');

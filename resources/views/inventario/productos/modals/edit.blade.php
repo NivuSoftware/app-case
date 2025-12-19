@@ -48,12 +48,22 @@
               </div>
             </div>
 
+            <!-- ✅ Stock mínimo + IVA -->
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="text-xs text-blue-800">Stock mínimo</label>
                 <input type="number" name="stock_minimo" id="edit-stock-minimo" min="0"
                        class="w-full border rounded-md px-3 py-2" placeholder="Ej. 20">
                 <p class="text-[11px] text-slate-500 mt-1">Te avisaremos cuando el stock baje de este valor.</p>
+              </div>
+
+              <div>
+                <label class="text-xs text-blue-800">IVA del producto (%)</label>
+                <select name="iva_porcentaje" id="edit-iva-porcentaje" class="w-full border rounded-md px-3 py-2">
+                  <option value="15">15% (Grava IVA)</option>
+                  <option value="0">0% (IVA 0)</option>
+                </select>
+                <p class="text-[11px] text-slate-500 mt-1">Este % se usa en el carrito para el IVA por item.</p>
               </div>
             </div>
 
@@ -79,10 +89,8 @@
             </div>
             <div>
               <label class="text-xs text-slate-700">Moneda</label>
-                <div class="w-full border rounded-md px-3 py-2 bg-gray-100 text-gray-700 text-sm">
-                  USD
-                </div>
-                <input type="hidden" name="moneda" id="edit-moneda" value="USD">
+              <div class="w-full border rounded-md px-3 py-2 bg-gray-100 text-gray-700 text-sm">USD</div>
+              <input type="hidden" name="moneda" id="edit-moneda" value="USD">
             </div>
           </div>
 
@@ -160,39 +168,50 @@
 <script>
   // UX: habilitar/inhabilitar bloques en EDIT según switches y valores cargados
   (function initEditToggles(){
-    const tDesc = document.getElementById('edit-toggle-descuento');
+    // anti-doble-bind
+    if (window.__editProductTogglesReady) return;
+    window.__editProductTogglesReady = true;
+
+    const tDesc  = document.getElementById('edit-toggle-descuento');
     const boxDesc = document.getElementById('edit-box-descuento');
-    const tCaja = document.getElementById('edit-toggle-caja');
+    const tCaja  = document.getElementById('edit-toggle-caja');
     const boxCaja = document.getElementById('edit-box-caja');
 
-    const setBlock = (toggle, box) => {
+    if (!tDesc || !boxDesc || !tCaja || !boxCaja) return;
+
+    const setBlock = (toggle, box, clearOnDisable = false) => {
       const inputs = box.querySelectorAll('input');
       if (toggle.checked) {
         box.classList.remove('opacity-50','pointer-events-none');
         inputs.forEach(i => i.disabled = false);
       } else {
         box.classList.add('opacity-50','pointer-events-none');
-        inputs.forEach(i => { i.disabled = true; });
+        inputs.forEach(i => {
+          if (clearOnDisable) i.value = "";
+          i.disabled = true;
+        });
       }
     };
 
     // Exponer para que openEditModal lo llame tras setear valores
     window._editToggleApply = function autoToggleFromValues(){
       const hasQtyDisc =
-        (document.getElementById('edit-cantidad-min').value ||
-         document.getElementById('edit-cantidad-max').value ||
-         document.getElementById('edit-precio-por-cantidad').value);
+        (document.getElementById('edit-cantidad-min')?.value ||
+         document.getElementById('edit-cantidad-max')?.value ||
+         document.getElementById('edit-precio-por-cantidad')?.value);
+
       tDesc.checked = !!hasQtyDisc;
-      setBlock(tDesc, boxDesc);
+      setBlock(tDesc, boxDesc, false);
 
       const hasBox =
-        (document.getElementById('edit-unidades-por-caja').value ||
-         document.getElementById('edit-precio-por-caja').value);
+        (document.getElementById('edit-unidades-por-caja')?.value ||
+         document.getElementById('edit-precio-por-caja')?.value);
+
       tCaja.checked = !!hasBox;
-      setBlock(tCaja, boxCaja);
+      setBlock(tCaja, boxCaja, false);
     };
 
-    tDesc?.addEventListener('change', () => setBlock(tDesc, boxDesc));
-    tCaja?.addEventListener('change', () => setBlock(tCaja, boxCaja));
+    tDesc.addEventListener('change', () => setBlock(tDesc, boxDesc, true));
+    tCaja.addEventListener('change', () => setBlock(tCaja, boxCaja, true));
   })();
 </script>

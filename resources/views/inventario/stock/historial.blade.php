@@ -37,10 +37,6 @@
                         <h3 class="text-lg font-semibold text-blue-900">
                             Movimientos registrados (ajustes de stock)
                         </h3>
-                        <span class="text-xs text-gray-500">
-                            *Por ahora solo se muestran ajustes manuales. Más adelante aquí
-                            también podrán verse ventas y compras.
-                        </span>
                     </div>
 
                     <div class="overflow-x-auto">

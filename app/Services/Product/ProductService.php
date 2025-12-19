@@ -3,7 +3,7 @@
 namespace App\Services\Product;
 
 use App\Repositories\Product\ProductRepository;
-use Exception;
+use App\Models\Inventory\Inventory;
 
 class ProductService
 {
@@ -16,7 +16,7 @@ class ProductService
 
     public function getAll()
     {
-        return $this->repo->all();
+        return $this->repo->all(true); // si true = with price, perfecto
     }
 
     public function getById($id)
@@ -26,12 +26,24 @@ class ProductService
 
     public function create(array $data)
     {
+        // 👇 si no mandan iva_porcentaje, usa default (15) o lo que quieras
+        if (!array_key_exists('iva_porcentaje', $data) || $data['iva_porcentaje'] === null || $data['iva_porcentaje'] === '') {
+            $data['iva_porcentaje'] = 15.00;
+        }
+
         return $this->repo->create($data);
     }
 
     public function update($id, array $data)
     {
         $product = $this->repo->find($id);
+
+        // opcional: si no viene, no lo toques
+        // si quieres forzar default cuando viene vacío:
+        if (array_key_exists('iva_porcentaje', $data) && ($data['iva_porcentaje'] === null || $data['iva_porcentaje'] === '')) {
+            $data['iva_porcentaje'] = 15.00;
+        }
+
         return $this->repo->update($product, $data);
     }
 
@@ -39,5 +51,27 @@ class ProductService
     {
         $product = $this->repo->find($id);
         return $this->repo->delete($product);
+    }
+
+    public function getByBodegaWithStock(int $bodegaId)
+    {
+        $inventarios = Inventory::with(['producto.price'])
+            ->where('bodega_id', $bodegaId)
+            ->where('stock_actual', '>', 0)
+            ->get();
+
+        return $inventarios
+            ->filter(fn ($inv) => $inv->producto)
+            ->map(function ($inv) {
+                $product = $inv->producto;
+
+                $data = $product->toArray();
+
+                $data['stock_actual'] = $inv->stock_actual;
+                $data['bodega_id']    = $inv->bodega_id;
+
+                return $data;
+            })
+            ->values();
     }
 }

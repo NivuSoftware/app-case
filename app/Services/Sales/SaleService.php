@@ -19,27 +19,8 @@ class SaleService
         $this->inventory = $inventory;
     }
 
-    /**
+     /**
      * Crea una venta completa (cabecera, ítems, pago, stock)
-     *
-     * @param array $data Estructura:
-     *  [
-     *      'client_id', 'user_id', 'bodega_id', 'fecha_venta', 'tipo_documento', 'observaciones',
-     *      'items' => [
-     *          [
-     *              'producto_id', 'descripcion', 'cantidad',
-     *              'precio_unitario', 'descuento' (opcional), 'percha_id' (opcional)
-     *          ], ...
-     *      ],
-     *      'payment' => [
-     *          'metodo',
-     *          'payment_method_id' (opcional),
-     *          'monto_recibido',
-     *          'referencia' (opcional),
-     *          'observaciones' (opcional),
-     *          'fecha_pago' (opcional)
-     *      ]
-     *  ]
      */
     public function crearVenta(array $data): Sale
     {
@@ -54,15 +35,13 @@ class SaleService
                 ]);
             }
 
-            if (!$payment) {
+            if (! $payment) {
                 throw ValidationException::withMessages([
                     'payment' => 'Debe registrar al menos un pago.',
                 ]);
             }
 
-            // =========================
-            // 1) Calcular totales
-            // =========================
+            
             $subtotal       = 0;
             $descuentoTotal = 0;
 
@@ -86,18 +65,17 @@ class SaleService
                     ]);
                 }
 
-                $item['total']      = $lineTotal;
-                $subtotal          += $lineSubtotal;
-                $descuentoTotal    += $descuento;
+                $item['total']   = $lineTotal;
+                $subtotal        += $lineSubtotal;
+                $descuentoTotal  += $descuento;
             }
             unset($item);
 
-            $impuesto = 0; // ICE u otros si luego los usas
-            $iva      = 0; // Por ahora 0, luego metemos lógica de IVA por tipo de producto
+            $impuesto = 0; 
+            $iva      = 0; 
 
             $total = $subtotal - $descuentoTotal + $impuesto + $iva;
 
-            // Montar datos para la cabecera
             $saleData = [
                 'client_id'      => $data['client_id'] ?? null,
                 'user_id'        => $data['user_id'],
@@ -114,66 +92,73 @@ class SaleService
                 'observaciones'  => $data['observaciones'] ?? null,
             ];
 
-            // =========================
-            // 2) Crear venta (cabecera)
-            // =========================
+          
             $sale = $this->sales->createSale($saleData);
 
-            // =========================
-            // 3) Crear ítems + descontar stock
-            // =========================
+           
+            $vendioSinStock = false;  
+
             foreach ($items as $item) {
                 $this->sales->addItem($sale, [
-                    'producto_id'    => $item['producto_id'],
-                    'descripcion'    => $item['descripcion'],
-                    'cantidad'       => $item['cantidad'],
-                    'precio_unitario'=> $item['precio_unitario'],
-                    'descuento'      => $item['descuento'] ?? 0,
-                    'total'          => $item['total'],
+                    'producto_id'     => $item['producto_id'],
+                    'descripcion'     => $item['descripcion'],
+                    'cantidad'        => $item['cantidad'],
+                    'precio_unitario' => $item['precio_unitario'],
+                    'descuento'       => $item['descuento'] ?? 0,
+                    'total'           => $item['total'],
                 ]);
 
-                // Descontar stock usando tu InventoryService
-                $this->inventory->decreaseStock(
+                $teniaStock = $this->inventory->decreaseStockForSale(
                     $item['producto_id'],
                     $data['bodega_id'],
                     $item['percha_id'] ?? null,
-                    $item['cantidad']
+                    $item['cantidad'],
+                    $data['user_id'],         
+                    $sale->id,              
+                    $sale->num_factura        
                 );
+
+
+                if (! $teniaStock) {
+                    $vendioSinStock = true;
+                }
             }
 
-            // =========================
-            // 4) Registrar pago + cambio
-            // =========================
+    
             $montoRecibido = (float) ($payment['monto_recibido'] ?? $total);
             $cambio        = $montoRecibido - $total;
 
             if ($montoRecibido < $total) {
-                // Si quieres permitir pagos parciales, aquí lo cambiamos.
-                // Por ahora obligamos a que cubra el total.
                 throw ValidationException::withMessages([
                     'payment.monto_recibido' => 'El monto recibido no puede ser menor al total de la venta.',
                 ]);
             }
 
             $this->sales->addPayment($sale, [
-                'fecha_pago'       => $payment['fecha_pago'] ?? now(),
-                'monto'            => $total,
-                'metodo'           => $payment['metodo'],
-                'payment_method_id'=> $payment['payment_method_id'] ?? null,
-                'referencia'       => $payment['referencia'] ?? null,
-                'observaciones'    => $payment['observaciones'] ?? null,
-                'monto_recibido'   => $montoRecibido,
-                'cambio'           => $cambio,
-                'usuario_id'       => $data['user_id'],
+                'fecha_pago'        => $payment['fecha_pago'] ?? now(),
+                'monto'             => $total,
+                'metodo'            => $payment['metodo'],
+                'payment_method_id' => $payment['payment_method_id'] ?? null,
+                'referencia'        => $payment['referencia'] ?? null,
+                'observaciones'     => $payment['observaciones'] ?? null,
+                'monto_recibido'    => $montoRecibido,
+                'cambio'            => $cambio,
+                'usuario_id'        => $data['user_id'],
             ]);
 
-            // =========================
-            // 5) Actualizar estado a pagada
-            // =========================
+            
             $this->sales->updateEstado($sale, 'pagada');
 
-            // Recargar con relaciones para que el controller lo devuelva listo para imprimir
-            return $this->sales->findById($sale->id);
+            $sale = $this->sales->findById($sale->id);
+            $sale->setAttribute('vendio_sin_stock', $vendioSinStock);
+
+            return $sale;
         });
     }
+
+    public function getById(int $id): ?Sale
+    {
+        return $this->sales->findById($id);
+    }
+
 }

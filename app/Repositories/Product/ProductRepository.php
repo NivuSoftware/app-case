@@ -6,14 +6,29 @@ use App\Models\Product\Product;
 
 class ProductRepository
 {
-    public function all()
+    /**
+     * Lista productos con su precio.
+     *
+     * @param  bool  $onlyActive  Si true, solo productos con estado = 1
+     */
+    public function all(bool $onlyActive = false)
     {
-        return Product::orderBy('id', 'desc')->get();
+        $query = Product::with('price')
+            ->orderBy('nombre', 'asc');
+
+        if ($onlyActive) {
+            $query->where('estado', true);
+        }
+
+        return $query->get();
     }
 
+    /**
+     * Busca un producto por ID, incluyendo su price.
+     */
     public function find($id)
     {
-        return Product::findOrFail($id);
+        return Product::with('price')->findOrFail($id);
     }
 
     public function create(array $data)
@@ -24,7 +39,8 @@ class ProductRepository
     public function update(Product $product, array $data)
     {
         $product->update($data);
-        return $product;
+
+        return $product->refresh()->load('price');
     }
 
     public function delete(Product $product)

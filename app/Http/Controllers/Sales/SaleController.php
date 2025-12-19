@@ -25,16 +25,21 @@ class SaleController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    // Vista principal del módulo de ventas / POS
-    public function viewIndex()
+    public function viewIndex(Bodega $bodega)
     {
-        $bodegas        = Bodega::all();
         $paymentMethods = PaymentMethod::where('activo', true)->get();
 
         return view('sales.index', [
-            'bodegas'        => $bodegas,
+            'bodegaSelected' => $bodega,
             'paymentMethods' => $paymentMethods,
         ]);
+    }
+
+    public function viewSelectBodega()
+    {
+        $bodegas = Bodega::all();
+
+        return view('sales.select-bodega', compact('bodegas'));
     }
 
     /*
@@ -45,44 +50,51 @@ class SaleController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        // Validación de la estructura que espera el Service
         $data = $request->validate([
-            'client_id'      => 'nullable|exists:clients,id',
-            'user_id'        => 'required|exists:users,id',
-            'bodega_id'      => 'required|exists:bodegas,id',
-            'fecha_venta'    => 'required|date',
-            'tipo_documento' => 'nullable|string|max:20',
-            'num_factura'    => 'nullable|string|max:50',
-            'observaciones'  => 'nullable|string|max:500',
+            'client_id'                  => 'nullable|exists:clients,id',
+            'user_id'                    => 'required|exists:users,id',
+            'bodega_id'                  => 'required|exists:bodegas,id',
+            'fecha_venta'                => 'required|date',
+            'tipo_documento'             => 'nullable|string|max:20',
+            'num_factura'                => 'nullable|string|max:50',
+            'observaciones'              => 'nullable|string|max:500',
 
-            'items'                  => 'required|array|min:1',
-            'items.*.producto_id'    => 'required|exists:products,id',
-            'items.*.descripcion'    => 'required|string|max:255',
-            'items.*.cantidad'       => 'required|integer|min:1',
-            'items.*.precio_unitario'=> 'required|numeric|min:0',
-            'items.*.descuento'      => 'nullable|numeric|min:0',
-            'items.*.percha_id'      => 'nullable|exists:perchas,id',
+            'items'                      => 'required|array|min:1',
+            'items.*.producto_id'        => 'required|exists:products,id',
+            'items.*.descripcion'        => 'required|string|max:255',
+            'items.*.cantidad'           => 'required|integer|min:1',
+            'items.*.precio_unitario'    => 'required|numeric|min:0',
+            'items.*.descuento'          => 'nullable|numeric|min:0',
+            'items.*.percha_id'          => 'nullable|exists:perchas,id',
 
-            'payment'                        => 'required|array',
-            'payment.metodo'                 => 'required|string|max:20',
-            'payment.payment_method_id'      => 'nullable|exists:payment_methods,id',
-            'payment.monto_recibido'         => 'required|numeric|min:0',
-            'payment.referencia'             => 'nullable|string|max:100',
-            'payment.observaciones'          => 'nullable|string|max:500',
-            'payment.fecha_pago'             => 'nullable|date',
+            'payment'                    => 'required|array',
+            'payment.metodo'             => 'required|string|max:20',
+            'payment.payment_method_id'  => 'nullable|exists:payment_methods,id',
+            'payment.monto_recibido'     => 'required|numeric|min:0',
+            'payment.referencia'         => 'nullable|string|max:100',
+            'payment.observaciones'      => 'nullable|string|max:500',
+            'payment.fecha_pago'         => 'nullable|date',
         ]);
 
         $sale = $this->service->crearVenta($data);
 
+        $message = 'Venta registrada correctamente.';
+
+        if ($sale->vendio_sin_stock ?? false) {
+            $message .= ' ⚠ OJO: uno o más productos se vendieron sin stock suficiente (inventario negativo).';
+        }
+
         return response()->json([
-            'message' => 'Venta registrada correctamente',
+            'message' => $message,
             'data'    => $sale,
         ], 201);
     }
 
+
+
     public function show($id): JsonResponse
     {
-        $sale = $this->service->getById($id); // podemos agregar este método luego
+        $sale = $this->service->getById($id); 
 
         return response()->json($sale);
     }

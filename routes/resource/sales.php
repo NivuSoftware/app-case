@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Sales\SaleController;
+use App\Http\Controllers\Sales\SalePrintController;
+
 
 Route::middleware(['auth'])->group(function () {
 
@@ -12,8 +14,14 @@ Route::middleware(['auth'])->group(function () {
     */
 
     // Vista principal del módulo de ventas / POS
-    Route::get('/ventas', [SaleController::class, 'viewIndex'])
+    Route::get('/facturar/{bodega}', [SaleController::class, 'viewIndex'])
         ->name('ventas.index');
+
+    Route::get('/bodega', [SaleController::class, 'viewSelectBodega'])
+        ->name('ventas.select_bodega');
+
+    Route::get('/ventas/{id}/ticket', [SalePrintController::class, 'ticket'])
+        ->name('sales.ticket');
 
     /*
     |--------------------------------------------------------------------------
@@ -29,6 +37,8 @@ Route::middleware(['auth'])->group(function () {
         // Ver una venta específica (para detalle / reimpresión)
         Route::get('/{id}', [SaleController::class, 'show'])
             ->name('show');
+
+        
 
         // Más adelante podemos añadir:
         // Route::get('/', [SaleController::class, 'index'])->name('index');

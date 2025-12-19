@@ -17,12 +17,19 @@ class Product extends Model
         'foto_url',
         'unidad_medida',
         'stock_minimo',
+        'iva_porcentaje',
         'estado',
     ];
+
 
     public function price()
     {
         return $this->hasOne(\App\Models\Product\ProductPrice::class, 'producto_id');
     }
+
+    protected $casts = [
+        'iva_porcentaje' => 'float', 
+    ];
+
 
 }

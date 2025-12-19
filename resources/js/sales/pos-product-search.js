@@ -1,6 +1,19 @@
-import { formatMoney } from './pos-utils';
+// resources/js/sales/pos-product-search.js
+import { formatMoney, showSaleAlert } from './pos-utils';
+import { addOrIncrementProduct } from './pos-cart';
 
-function debounce(fn, delay = 300) {
+let ALL_PRODUCTS = [];
+
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function debounce(fn, delay = 250) {
     let t;
     return (...args) => {
         clearTimeout(t);
@@ -8,95 +21,275 @@ function debounce(fn, delay = 300) {
     };
 }
 
-async function searchProducts(term) {
-    const routes = window.SALES_ROUTES || {};
-    if (!routes.productSearch || term.length < 2) {
-        renderProductSuggestions([]);
-        return;
-    }
+function notifyAdded(descripcion, extra = '') {
+    const msg = extra
+        ? `Se añadió "${descripcion}" al carrito ${extra}`
+        : `Se añadió "${descripcion}" al carrito.`;
 
-    try {
-        const res = await fetch(`${routes.productSearch}?q=${encodeURIComponent(term)}`, {
-            headers: { 'Accept': 'application/json' },
-        });
-        if (!res.ok) {
-            renderProductSuggestions([]);
-            return;
-        }
-        const data = await res.json();
-        renderProductSuggestions(data || []);
-    } catch (e) {
-        console.error(e);
-        renderProductSuggestions([]);
+    if (typeof showSaleAlert === 'function') {
+        showSaleAlert(msg);
+    } else if (window.SalesUtils?.showSaleAlert) {
+        window.SalesUtils.showSaleAlert(msg);
     }
 }
 
-function renderProductSuggestions(products) {
-    const box = document.getElementById('product_suggestions');
-    if (!box) return;
+async function loadProducts() {
+    const list  = document.getElementById('product_list');
+    const empty = document.getElementById('product_list_empty');
+    const bodegaSelect = document.getElementById('bodega_id');
 
-    box.innerHTML = '';
+    if (!list || !empty) return;
 
-    if (!products.length) {
-        box.classList.add('hidden');
+    const bodegaId = bodegaSelect ? bodegaSelect.value : '';
+
+    if (!bodegaId) {
+        ALL_PRODUCTS = [];
+        list.innerHTML = '';
+        empty.classList.remove('hidden');
+        empty.innerHTML = `
+            <p class="text-[13px] text-slate-400 text-center px-6">
+                Selecciona una bodega para ver los productos con stock disponible.
+            </p>
+        `;
         return;
     }
 
-    box.classList.remove('hidden');
+    const routes = window.SALES_ROUTES || {};
+    let url = routes.productSearch;
 
-    products.forEach((p) => {
-        const div = document.createElement('div');
-        div.className = 'px-3 py-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center';
-        div.dataset.productId = p.id;
-        div.dataset.productName = p.nombre;
-        div.dataset.productPrice = p.price?.precio_unitario || p.precio_unitario || 0;
-        div.innerHTML = `
-            <div class="flex flex-col">
-                <span class="text-xs font-semibold text-gray-800">${p.nombre}</span>
-                <span class="text-[10px] text-gray-400">
-                    Int: ${p.codigo_interno || '-'} | Barras: ${p.codigo_barras || '-'}
-                </span>
-            </div>
-            <span class="text-xs font-semibold text-gray-700">${formatMoney(div.dataset.productPrice)}</span>
+    if (!url && list.dataset && list.dataset.productUrl) {
+        url = list.dataset.productUrl;
+    }
+
+    if (!url) {
+        empty.classList.remove('hidden');
+        empty.innerHTML = `
+            <p class="text-[13px] text-red-500 text-center px-6">
+                No se encontró la ruta de productos.
+            </p>
         `;
-        box.appendChild(div);
+        list.innerHTML = '';
+        return;
+    }
+
+    const separator = url.includes('?') ? '&' : '?';
+    url = `${url}${separator}bodega_id=${encodeURIComponent(bodegaId)}`;
+
+    empty.classList.remove('hidden');
+    empty.innerHTML = `
+        <p class="text-[13px] text-slate-400 text-center px-6">
+            Cargando productos de la bodega seleccionada...
+        </p>
+    `;
+    list.innerHTML = '';
+
+    try {
+        console.log('Cargando productos desde:', url);
+
+        const res = await fetch(url, {
+            headers: { 'Accept': 'application/json' },
+        });
+
+        if (!res.ok) {
+            throw new Error('Error al cargar productos');
+        }
+
+        const data = await res.json();
+        ALL_PRODUCTS = Array.isArray(data) ? data : [];
+
+        renderProductList(ALL_PRODUCTS);
+    } catch (error) {
+        console.error('Error cargando productos:', error);
+        list.innerHTML = '';
+        empty.classList.remove('hidden');
+        empty.innerHTML = `
+            <p class="text-[13px] text-red-500 text-center px-6">
+                Ocurrió un error al cargar los productos.
+            </p>
+        `;
+    }
+}
+
+function filterProducts(term) {
+    if (!term) return ALL_PRODUCTS;
+
+    const q = term.toLowerCase();
+
+    return ALL_PRODUCTS.filter((p) => {
+        const nombre = (p.nombre || '').toLowerCase();
+        const cb = (p.codigo_barras || '').toLowerCase();
+        const ci = (p.codigo_interno || '').toLowerCase();
+
+        return nombre.includes(q) || cb.includes(q) || ci.includes(q);
     });
 }
 
-function applyProductFromSuggestion(div) {
-    const idProd = document.getElementById('item_producto_id');
-    const desc = document.getElementById('item_descripcion');
-    const precio = document.getElementById('item_precio_unitario');
+function getUnitPrice(p) {
+    const priceObj = p.price || {};
+    return Number(priceObj.precio_unitario ?? p.precio_unitario ?? 0);
+}
 
-    const prodId = div.dataset.productId;
-    const name = div.dataset.productName;
-    const price = parseFloat(div.dataset.productPrice || '0');
+// ✅ NUEVO helper: iva del producto
+function getIvaPct(p) {
+    const v = Number(p.iva_porcentaje);
+    if (Number.isFinite(v)) return Math.max(0, Math.min(100, v));
+    return 15; // fallback razonable
+}
 
-    if (idProd) idProd.value = prodId || '';
-    if (desc) desc.value = name || '';
-    if (precio) precio.value = price.toFixed(2);
+function renderProductList(products) {
+    const list = document.getElementById('product_list');
+    const empty = document.getElementById('product_list_empty');
+    if (!list || !empty) return;
 
-    const box = document.getElementById('product_suggestions');
-    if (box) box.classList.add('hidden');
+    list.innerHTML = '';
+
+    if (!products || products.length === 0) {
+        empty.classList.remove('hidden');
+        empty.innerHTML = `
+            <p class="text-[13px] text-slate-400 text-center px-6">
+                No se encontraron productos. Ajusta tu búsqueda.
+            </p>
+        `;
+        return;
+    }
+
+    empty.classList.add('hidden');
+
+    products.forEach((p) => {
+        const unitPrice = getUnitPrice(p);
+        const codigo = p.codigo_interno || p.codigo_barras || '';
+        const ivaPct = getIvaPct(p);
+
+        const row = document.createElement('button');
+        row.type = 'button';
+
+        row.dataset.productId = p.id;
+        row.dataset.productName = p.nombre || '';
+        row.dataset.productPrice = String(unitPrice);
+        row.dataset.productIva = String(ivaPct);
+
+        row.className =
+            'w-full text-left px-3 py-2.5 flex items-center justify-between ' +
+            'hover:bg-slate-100/80 focus:outline-none';
+
+        row.innerHTML = `
+            <div class="flex flex-col">
+                <span class="text-[13px] font-semibold text-slate-800">
+                    ${escapeHtml(p.nombre || 'Producto sin nombre')}
+                </span>
+                <span class="text-[11px] text-slate-400">
+                    ${codigo ? 'Cod: ' + escapeHtml(codigo) : ''}
+                    ${p.unidad_medida ? ' · ' + escapeHtml(p.unidad_medida) : ''}
+                    · IVA: ${ivaPct}%
+                </span>
+            </div>
+            <div class="text-right">
+                <p class="text-sm font-bold text-blue-700">
+                    ${formatMoney(unitPrice)}
+                </p>
+                ${
+                    p.categoria
+                        ? `<p class="text-[11px] text-slate-400">${escapeHtml(p.categoria)}</p>`
+                        : ''
+                }
+            </div>
+        `;
+
+        row.addEventListener('click', () => {
+            const productoId = Number(p.id);
+            const descripcion = p.nombre || 'Producto sin nombre';
+            const precio = getUnitPrice(p);
+            const iva_porcentaje = getIvaPct(p); // ✅
+
+            if (!productoId || !descripcion || isNaN(precio)) {
+                console.warn('[POS] Datos incompletos del producto al hacer click');
+                return;
+            }
+
+            addOrIncrementProduct({
+                producto_id: productoId,
+                descripcion,
+                precio_unitario: precio,
+                descuento: 0,
+                descuento_pct: 0,
+                iva_porcentaje, // ✅ NUEVO
+                cantidad: 1,
+            });
+
+            notifyAdded(descripcion);
+        });
+
+        list.appendChild(row);
+    });
 }
 
 export function initProductSearch() {
-    const input = document.getElementById('item_descripcion');
-    const suggBox = document.getElementById('product_suggestions');
-    if (!input || !suggBox) return;
+    const input        = document.getElementById('item_descripcion');
+    const suggBox      = document.getElementById('product_suggestions');
+    const bodegaSelect = document.getElementById('bodega_id');
 
-    input.addEventListener('input', debounce((e) => {
-        const term = e.target.value.trim();
-        if (!term) {
-            renderProductSuggestions([]);
-            return;
-        }
-        searchProducts(term);
-    }, 300));
+    if (suggBox) {
+        suggBox.classList.add('hidden');
+        suggBox.innerHTML = '';
+    }
 
-    suggBox.addEventListener('click', (e) => {
-        const item = e.target.closest('div[data-product-id]');
-        if (!item) return;
-        applyProductFromSuggestion(item);
-    });
+    loadProducts();
+
+    if (bodegaSelect && bodegaSelect.tagName === 'SELECT') {
+        bodegaSelect.addEventListener('change', () => {
+            if (input) input.value = '';
+            loadProducts();
+        });
+    }
+
+    if (input) {
+        input.addEventListener(
+            'input',
+            debounce((e) => {
+                const term = e.target.value.trim();
+                const filtered = filterProducts(term);
+                renderProductList(filtered);
+            }, 200)
+        );
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+
+            e.preventDefault();
+            const term = input.value.trim();
+            if (!term) return;
+
+            const matches = filterProducts(term);
+
+            if (matches.length === 1) {
+                const p = matches[0];
+                const productoId = Number(p.id);
+                const descripcion = p.nombre || 'Producto sin nombre';
+                const precio = getUnitPrice(p);
+                const iva_porcentaje = getIvaPct(p);
+
+                if (!productoId || !descripcion || isNaN(precio)) {
+                    console.warn('[POS] Datos incompletos del producto (scanner)');
+                    return;
+                }
+
+                addOrIncrementProduct({
+                    producto_id: productoId,
+                    descripcion,
+                    precio_unitario: precio,
+                    descuento: 0,
+                    descuento_pct: 0,
+                    iva_porcentaje, // ✅
+                    cantidad: 1,
+                });
+
+                input.value = '';
+                renderProductList(ALL_PRODUCTS);
+
+                notifyAdded(descripcion, '(scanner)');
+            } else {
+                renderProductList(matches);
+            }
+        });
+    }
 }
