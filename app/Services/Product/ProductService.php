@@ -16,18 +16,29 @@ class ProductService
 
     public function getAll()
     {
-        return $this->repo->all(true); // si true = with price, perfecto
+        return $this->repo->all(
+            onlyActive: true,
+            withPrice: true,
+            withTierPrices: true
+        );
     }
 
     public function getById($id)
     {
-        return $this->repo->find($id);
+        return $this->repo->find(
+            $id,
+            withPrice: true,
+            withTierPrices: true
+        );
     }
 
     public function create(array $data)
     {
-        // 👇 si no mandan iva_porcentaje, usa default (15) o lo que quieras
-        if (!array_key_exists('iva_porcentaje', $data) || $data['iva_porcentaje'] === null || $data['iva_porcentaje'] === '') {
+        if (
+            !array_key_exists('iva_porcentaje', $data) ||
+            $data['iva_porcentaje'] === null ||
+            $data['iva_porcentaje'] === ''
+        ) {
             $data['iva_porcentaje'] = 15.00;
         }
 
@@ -38,9 +49,10 @@ class ProductService
     {
         $product = $this->repo->find($id);
 
-        // opcional: si no viene, no lo toques
-        // si quieres forzar default cuando viene vacío:
-        if (array_key_exists('iva_porcentaje', $data) && ($data['iva_porcentaje'] === null || $data['iva_porcentaje'] === '')) {
+        if (
+            array_key_exists('iva_porcentaje', $data) &&
+            ($data['iva_porcentaje'] === null || $data['iva_porcentaje'] === '')
+        ) {
             $data['iva_porcentaje'] = 15.00;
         }
 
@@ -55,7 +67,11 @@ class ProductService
 
     public function getByBodegaWithStock(int $bodegaId)
     {
-        $inventarios = Inventory::with(['producto.price'])
+        // ✅ CORRECTO
+        $inventarios = Inventory::with([
+                'producto.price',
+                'producto.productPrices',
+            ])
             ->where('bodega_id', $bodegaId)
             ->where('stock_actual', '>', 0)
             ->get();

@@ -276,18 +276,23 @@
                                     <span id="resumen-impuesto">$ 0.00</span>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                <label class="inline-flex items-center gap-2 text-[12px] text-slate-700 select-none">
-                                    <input
+                                    <label class="inline-flex items-center gap-2 text-[12px] text-slate-700 select-none">
+                                        <input
                                         id="toggle_iva_global"
                                         type="checkbox"
                                         checked
                                         class="rounded border-slate-300"
-                                    />
-                                    Aplicar IVA (15%)
-                                </label>
+                                        />
+                                        <span id="iva_label_text">Aplicar IVA (15%)</span>
+                                    </label>
 
-                                <span id="resumen-iva">$ 0.00</span>
-                            </div>
+                                    <span id="resumen-iva">$ 0.00</span>
+
+                                    <!-- ✅ hidden para mandar al backend -->
+                                    <input type="hidden" id="iva_enabled" value="1">
+                                </div>
+
+
 
 
                             </div>
@@ -354,5 +359,23 @@
 
         console.log('[POS] AUTH_USER_ID =', window.AUTH_USER_ID);
     </script>
+
+    <script>
+    (function () {
+        const t = document.getElementById('toggle_iva_global');
+        const label = document.getElementById('iva_label_text');
+        const hidden = document.getElementById('iva_enabled');
+
+        function sync() {
+        const on = !!t?.checked;
+        if (label) label.textContent = on ? 'Aplicar IVA (15%)' : 'IVA desactivado (0%)';
+        if (hidden) hidden.value = on ? '1' : '0';
+        }
+
+        if (t) t.addEventListener('change', sync);
+        sync();
+    })();
+    </script>
+
 
 </x-app-layout>

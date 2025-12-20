@@ -26,15 +26,18 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="center bold" style="font-size:14px;">CASE APP - PAPELERIA EL ESTUDIANTE</div>
-    <div class="center small">Ticket / Comprobante</div>
-
+    <div class="center bold" style="font-size:14px;">Papeleria y Bazar</div>
+    <div class="center bold" style="font-size:20px;">"El estudiante"</div>
+    <div class="center" style="font-size:12px;">Calle, José Miguel Guarderas S/N</div>
+    <div class="center" style="font-size:12px;">Calderon, 170203</div>
+    <div class="center" style="font-size:12px;">Teléfono: 099 982 6100</div>
+    <div class="center" style="font-size:12px;">RUC: 1793231882001</div>
+    
     <div class="hr"></div>
 
     <div class="row small"><div>Fecha</div><div class="right">{{ \Carbon\Carbon::parse($sale->fecha_venta)->format('d/m/Y H:i') }}</div></div>
-    <div class="row small"><div>Doc</div><div class="right">{{ $sale->tipo_documento }} {{ $sale->num_factura ?? ('#'.$sale->id) }}</div></div>
-    <div class="row small"><div>Bodega</div><div class="right">{{ $sale->bodega->nombre ?? '-' }}</div></div>
-    <div class="row small"><div>Cajero</div><div class="right">{{ $sale->user->name ?? '-' }}</div></div>
+    <div class="row small"><div>Factura</div><div class="right">{{ $sale->num_factura ?? ('#'.$sale->id) }}</div></div>
+  
 
     <div class="hr"></div>
 
@@ -74,7 +77,7 @@
 
     @php $p = $sale->payments->first(); @endphp
     <div class="hr"></div>
-    <div class="row small"><div>Método</div><div class="right">{{ $p->metodo ?? '-' }}</div></div>
+    <div class="row small"><div>Método de pago</div><div class="right">{{ $p->metodo ?? '-' }}</div></div>
     <div class="row small"><div>Recibido</div><div class="right">${{ number_format($p->monto_recibido ?? 0, 2) }}</div></div>
     <div class="row small"><div>Cambio</div><div class="right">${{ number_format($p->cambio ?? 0, 2) }}</div></div>
 

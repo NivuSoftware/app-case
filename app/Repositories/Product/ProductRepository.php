@@ -6,29 +6,39 @@ use App\Models\Product\Product;
 
 class ProductRepository
 {
-    /**
-     * Lista productos con su precio.
-     *
-     * @param  bool  $onlyActive  Si true, solo productos con estado = 1
-     */
-    public function all(bool $onlyActive = false)
-    {
-        $query = Product::with('price')
-            ->orderBy('nombre', 'asc');
+    public function all(
+        bool $onlyActive = false,
+        bool $withPrice = true,
+        bool $withTierPrices = true
+    ) {
+        $query = Product::query()->orderBy('nombre', 'asc');
 
-        if ($onlyActive) {
-            $query->where('estado', true);
-        }
+        $with = [];
+
+        if ($withPrice) $with[] = 'price';
+        if ($withTierPrices) $with[] = 'productPrices'; // ✅ ya existe
+
+        if (!empty($with)) $query->with($with);
+
+        if ($onlyActive) $query->where('estado', true);
 
         return $query->get();
     }
 
-    /**
-     * Busca un producto por ID, incluyendo su price.
-     */
-    public function find($id)
-    {
-        return Product::with('price')->findOrFail($id);
+    public function find(
+        $id,
+        bool $withPrice = true,
+        bool $withTierPrices = true
+    ) {
+        $query = Product::query();
+
+        $with = [];
+        if ($withPrice) $with[] = 'price';
+        if ($withTierPrices) $with[] = 'productPrices';
+
+        if (!empty($with)) $query->with($with);
+
+        return $query->findOrFail($id);
     }
 
     public function create(array $data)
@@ -40,7 +50,7 @@ class ProductRepository
     {
         $product->update($data);
 
-        return $product->refresh()->load('price');
+        return $product->refresh()->load(['price', 'productPrices']);
     }
 
     public function delete(Product $product)

@@ -18,8 +18,11 @@ class ProductPriceRepository
 
     public function findByProduct($productoId)
     {
-        return ProductPrice::where('producto_id', $productoId)->first();
+        return ProductPrice::where('producto_id', $productoId)
+            ->orderBy('id', 'desc')
+            ->first();
     }
+
 
     public function create(array $data)
     {

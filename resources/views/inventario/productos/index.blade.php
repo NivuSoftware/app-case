@@ -169,8 +169,6 @@
     $("form-create-product")?.addEventListener("submit", handleCreateProduct);
     $("form-edit")?.addEventListener("submit", handleEditProduct);
 
-    // Por si tu modal assign tiene form con id="form-assign"
-    $("form-assign")?.addEventListener("submit", submitAssign);
   });
 
   // ==============================
