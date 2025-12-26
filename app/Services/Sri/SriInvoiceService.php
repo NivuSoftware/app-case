@@ -22,16 +22,17 @@ class SriInvoiceService
         private ElectronicInvoiceRepository $repo
     ) {}
 
-    /**
-     * Genera: num_factura + clave_acceso + XML (sin firmar) + electronic_invoices
-     * y aumenta el secuencial en sri_configs.
-     */
+   
     public function generateXmlForSale(int $saleId)
     {
         return DB::transaction(function () use ($saleId) {
 
             /** @var Sale $sale */
-            $sale = Sale::with(['items.producto', 'client'])->lockForUpdate()->findOrFail($saleId);
+            $sale = Sale::with([
+                'items.producto',
+                'client',
+                'payments.paymentMethod',
+            ])->lockForUpdate()->findOrFail($saleId);
 
             if ($sale->estado !== 'pagada') {
                 throw ValidationException::withMessages([
@@ -39,14 +40,13 @@ class SriInvoiceService
                 ]);
             }
 
-            // Si ya existe electronic invoice, no duplicar
             $existing = $this->repo->findBySaleId($sale->id);
             if ($existing) {
                 return $existing;
             }
 
             /** @var SriConfig $cfg */
-            $cfg = $this->configService->getOrFailForUpdate(); // lock row config
+            $cfg = $this->configService->getOrFailForUpdate(); 
 
             $estab = str_pad((string)($cfg->codigo_establecimiento ?? '001'), 3, '0', STR_PAD_LEFT);
             $pto   = str_pad((string)($cfg->codigo_punto_emision ?? '001'), 3, '0', STR_PAD_LEFT);
@@ -57,14 +57,13 @@ class SriInvoiceService
             $secuencial = str_pad((string)$seq, 9, '0', STR_PAD_LEFT);
             $serie = $estab . $pto;
 
-            // num_factura para tu Sale
             $numFactura = "{$estab}-{$pto}-{$secuencial}";
             $sale->num_factura = $sale->num_factura ?: $numFactura;
             $sale->save();
 
-            // clave acceso
+    
             $fecha = Carbon::parse($sale->fecha_venta)->format('dmY');
-            $codDoc = '01'; // FACTURA
+            $codDoc = '01'; 
             $ruc = preg_replace('/\D+/', '', (string)$cfg->ruc);
             $ambiente = (string)($cfg->ambiente ?? 1); // 1 pruebas, 2 prod
             $tipoEmision = '1';
@@ -74,17 +73,14 @@ class SriInvoiceService
             $dv = $this->modulo11($claveSinDv);
             $claveAcceso = $claveSinDv.$dv;
 
-            // armar XML (simple, MVP)
             $xmlString = $this->buildFacturaXml($sale, $cfg, $claveAcceso, $estab, $pto, $secuencial);
 
-            // guardar
             $dir = "sri/xml/generados";
             Storage::disk('local')->makeDirectory($dir);
 
             $xmlPath = "{$dir}/{$claveAcceso}.xml";
             Storage::disk('local')->put($xmlPath, $xmlString);
 
-            // crear registro electronic_invoices
             $invoice = $this->repo->create([
                 'sale_id'           => $sale->id,
                 'clave_acceso'      => $claveAcceso,
@@ -92,7 +88,6 @@ class SriInvoiceService
                 'estado_sri' => 'PENDIENTE_ENVIO',
             ]);
 
-            // incrementar secuencial
             $cfg->secuencial_factura_actual = $seq + 1;
             $cfg->save();
 
@@ -100,10 +95,6 @@ class SriInvoiceService
         });
     }
 
-    /**
-     * PASO 4: Enviar XML FIRMADO al SRI (Recepción) y consultar Autorización.
-     * Requiere: electronic_invoices.xml_firmado_path existente.
-     */
     public function sendAndAuthorizeForSale(int $saleId)
     {
         return DB::transaction(function () use ($saleId) {
@@ -121,7 +112,6 @@ class SriInvoiceService
                 $invoice = $this->generateXmlForSale($sale->id);
             }
 
-            // Si ya está autorizado, no repetir
             if (strtoupper((string)($invoice->estado_sri ?? '')) === 'AUTORIZADO') {
                 return $invoice;
             }
@@ -136,7 +126,6 @@ class SriInvoiceService
             $cfg = $this->getCfgOrFail();
             $urls = $this->getWsdlUrls((int)($cfg->ambiente ?? 1));
 
-            // ========= 1) RECEPCIÓN =========
             $signedXml = Storage::disk('local')->get($signedPath);
 
             $recep = $this->callRecepcion($urls['reception_wsdl'], $signedXml);
@@ -155,12 +144,10 @@ class SriInvoiceService
             $invoice->mensajes_sri_json = $mensajesRecep;
             $invoice->save();
 
-            // Si no fue RECIBIDA, se detiene aquí (DEVUELTA u otro)
             if ($estadoRecep !== 'RECIBIDA') {
                 return $invoice->fresh();
             }
 
-            // ========= 2) AUTORIZACIÓN =========
             $claveAcceso = (string)($invoice->clave_acceso ?? '');
             if ($claveAcceso === '') {
                 throw ValidationException::withMessages([
@@ -225,7 +212,6 @@ class SriInvoiceService
 
     private function getWsdlUrls(int $ambiente): array
     {
-        // ambiente: 1 = pruebas, 2 = producción
         if ($ambiente === 2) {
             return [
                 'reception_wsdl'     => 'https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline?wsdl',
@@ -401,30 +387,59 @@ class SriInvoiceService
         return $dv;
     }
 
-    /**
-     * MVP XML: genera estructura básica.
-     * NOTA: aquí vamos a mejorar en el Paso 3 (firmado) y Paso 4 (autorización).
-     */
+    private function resolveCompradorSri(Sale $sale): array
+    {
+        $client = $sale->client;
+
+        if (!$client) {
+            return ['07', '9999999999999', 'CONSUMIDOR FINAL'];
+        }
+
+        $nombre = trim((string)($client->nombre ?? ''));
+        if ($nombre === '') $nombre = 'CLIENTE';
+
+        $rawId = trim((string)($client->identificacion ?? ''));
+
+        if ($rawId === '') {
+            throw ValidationException::withMessages([
+                'client_id' => 'El cliente seleccionado no tiene identificación. Registra cédula/RUC/pasaporte o factura como Consumidor Final.',
+            ]);
+        }
+
+        $idDigits = preg_replace('/\D+/', '', $rawId);
+
+        if ($idDigits === '9999999999999') {
+            return ['07', '9999999999999', 'CONSUMIDOR FINAL'];
+        }
+
+        if (strlen($idDigits) === 13) {
+            return ['04', $idDigits, $nombre];
+        }
+
+        if (strlen($idDigits) === 10) {
+            return ['05', $idDigits, $nombre];
+        }
+
+        return ['06', $rawId, $nombre];
+    }
+
+
+   
     private function buildFacturaXml(Sale $sale, SriConfig $cfg, string $claveAcceso, string $estab, string $pto, string $secuencial): string
     {
         $razonSocial = $cfg->razon_social ?? 'EMISOR';
         $nombreComercial = $cfg->nombre_comercial ?? $razonSocial;
         $dirMatriz = $cfg->direccion_matriz ?? 'S/D';
 
-        // Cliente por defecto consumidor final
-        $compradorNombre = $sale->client->nombre ?? 'CONSUMIDOR FINAL';
-        $compradorId     = $sale->client->identificacion ?? '9999999999999';
-        $tipoIdComprador = '07';
+       [$tipoIdComprador, $compradorId, $compradorNombre] = $this->resolveCompradorSri($sale);
 
         $fechaEmision = Carbon::parse($sale->fecha_venta)->format('d/m/Y');
 
-        // ==========================
-        // Totales calculados DESDE ITEMS (SRI-friendly)
-        // ==========================
+       
         $totalSinImpuestosN = 0.0;
         $totalDescuentoN = 0.0;
         $ivaTotalN = 0.0;
-        $totalesIva = []; // key: codigoPorcentaje
+        $totalesIva = [];
 
         foreach ($sale->items as $it) {
             $base = round((float) $it->total, 2);
@@ -464,9 +479,7 @@ class SriInvoiceService
         $factura->setAttribute('version', '1.1.0');
         $xml->appendChild($factura);
 
-        // ==========================
-        // infoTributaria
-        // ==========================
+     
         $infoTrib = $xml->createElement('infoTributaria');
         $factura->appendChild($infoTrib);
 
@@ -482,9 +495,7 @@ class SriInvoiceService
         $infoTrib->appendChild($xml->createElement('secuencial', $secuencial));
         $infoTrib->appendChild($xml->createElement('dirMatriz', $dirMatriz));
 
-        // ==========================
-        // infoFactura
-        // ==========================
+   
         $infoFac = $xml->createElement('infoFactura');
         $factura->appendChild($infoFac);
 
@@ -497,7 +508,6 @@ class SriInvoiceService
         $infoFac->appendChild($xml->createElement('totalSinImpuestos', $totalSinImpuestos));
         $infoFac->appendChild($xml->createElement('totalDescuento', $totalDescuento));
 
-        // totalConImpuestos (por grupo)
         $tci = $xml->createElement('totalConImpuestos');
         $infoFac->appendChild($tci);
 
@@ -516,19 +526,60 @@ class SriInvoiceService
         $infoFac->appendChild($xml->createElement('importeTotal', $importeTotal));
         $infoFac->appendChild($xml->createElement('moneda', 'DOLAR'));
 
-        // ✅ pagos (MVP)
         $pagos = $xml->createElement('pagos');
-        $pago  = $xml->createElement('pago');
-        $pago->appendChild($xml->createElement('formaPago', '01')); // efectivo
-        $pago->appendChild($xml->createElement('total', $importeTotal));
-        $pago->appendChild($xml->createElement('plazo', '0'));
-        $pago->appendChild($xml->createElement('unidadTiempo', 'dias'));
-        $pagos->appendChild($pago);
+
+        $payments = $sale->payments ?? collect();
+        if ($payments instanceof \Illuminate\Database\Eloquent\Collection === false) {
+            $payments = collect($payments);
+        }
+
+        if ($payments->isEmpty()) {
+            $pago  = $xml->createElement('pago');
+            $pago->appendChild($xml->createElement('formaPago', '01'));
+            $pago->appendChild($xml->createElement('total', $importeTotal));
+            $pago->appendChild($xml->createElement('plazo', '0'));
+            $pago->appendChild($xml->createElement('unidadTiempo', 'dias'));
+            $pagos->appendChild($pago);
+        } else {
+            $sum = 0.0;
+
+            foreach ($payments as $p) {
+                $codigoSri = $p->paymentMethod?->codigo_sri
+                    ? (string) $p->paymentMethod->codigo_sri
+                    : $this->mapFormaPagoSri((string) ($p->metodo ?? ''));
+
+                $montoPago = round((float) ($p->monto ?? 0), 2);
+                if ($montoPago <= 0) $montoPago = round((float) $importeTotal, 2);
+
+                $sum += $montoPago;
+
+                $pago = $xml->createElement('pago');
+                $pago->appendChild($xml->createElement('formaPago', $codigoSri));
+                $pago->appendChild($xml->createElement('total', number_format($montoPago, 2, '.', '')));
+                $pago->appendChild($xml->createElement('plazo', '0'));
+                $pago->appendChild($xml->createElement('unidadTiempo', 'dias'));
+                $pagos->appendChild($pago);
+            }
+
+            $importe = round((float) $importeTotal, 2);
+            $diff = round($importe - $sum, 2);
+
+            if (abs($diff) >= 0.01 && $pagos->lastChild) {
+                foreach ($pagos->lastChild->childNodes as $node) {
+                    if ($node->nodeName === 'total') {
+                        $nuevo = round(((float) $node->nodeValue) + $diff, 2);
+                        $node->nodeValue = number_format($nuevo, 2, '.', '');
+                        break;
+                    }
+                }
+            }
+        }
+
         $infoFac->appendChild($pagos);
 
-        // ==========================
-        // detalles
-        // ==========================
+
+
+  
         $detalles = $xml->createElement('detalles');
         $factura->appendChild($detalles);
 
@@ -706,31 +757,23 @@ class SriInvoiceService
         $dsig = new XMLSecurityDSig();
         $dsig->setCanonicalMethod(XMLSecurityDSig::EXC_C14N);
 
-        // 1) Reference al documento (enveloped)
         $dsig->addReference(
             $root,
             XMLSecurityDSig::SHA256,
             ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', XMLSecurityDSig::EXC_C14N],
             [
-                // ✅ SRI: el root usa atributo "id" (minúscula), no "Id"
                 'id_name' => 'id',
                 'overwrite' => false,
 
-                // ✅ Referencia al id existente del comprobante
                 'force_uri' => true,
                 'uri' => '#comprobante',
 
-                // Id del nodo <ds:Reference> (esto sí es válido)
                 'id' => $ref0Id,
             ]
         );
 
-
-        // OJO: el Signature Node (sigNode) vive en otro DOMDocument.
-        // Todo lo XAdES se debe crear en este documento:
         $sigDoc = $dsig->sigNode->ownerDocument;
 
-        // ===== Construcción XAdES (en el documento de la firma) =====
         $obj = $sigDoc->createElementNS($dsNS, 'ds:Object');
         $obj->setAttribute('Id', $objectId);
 
@@ -740,7 +783,6 @@ class SriInvoiceService
         $signedProps = $sigDoc->createElementNS($xadesNS, 'xades:SignedProperties');
         $signedProps->setAttribute('Id', $signedPropsId);
 
-        // SignedSignatureProperties
         $ssp = $sigDoc->createElementNS($xadesNS, 'xades:SignedSignatureProperties');
         $signTime = $sigDoc->createElementNS($xadesNS, 'xades:SigningTime', gmdate('Y-m-d\TH:i:s\Z'));
         $ssp->appendChild($signTime);
@@ -766,7 +808,6 @@ class SriInvoiceService
         $signingCert->appendChild($certNode);
         $ssp->appendChild($signingCert);
 
-        // SignedDataObjectProperties
         $sdp = $sigDoc->createElementNS($xadesNS, 'xades:SignedDataObjectProperties');
         $dof = $sigDoc->createElementNS($xadesNS, 'xades:DataObjectFormat');
         $dof->setAttribute('ObjectReference', "#{$ref0Id}");
@@ -774,8 +815,7 @@ class SriInvoiceService
         $dof->appendChild($mime);
         $sdp->appendChild($dof);
 
-        // SignedProperties debe tener:
-        // <SignedSignatureProperties> y <SignedDataObjectProperties>
+   
         $signedSigProps = $sigDoc->createElementNS($xadesNS, 'xades:SignedSignatureProperties');
         foreach ($ssp->childNodes as $n) {
             $signedSigProps->appendChild($n->cloneNode(true));
@@ -787,10 +827,8 @@ class SriInvoiceService
         $qual->appendChild($signedProps);
         $obj->appendChild($qual);
 
-        // Pega el ds:Object dentro de la firma
         $dsig->sigNode->appendChild($obj);
 
-        // ===== Key / Insert Signature / Add Reference SignedProperties / Sign =====
         $key = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
         $key->loadKey(trim($privateKey), false, false);
 
@@ -820,14 +858,10 @@ class SriInvoiceService
             }
         }
 
-
-        // 4) Firma
         $dsig->sign($key);
 
-        // Set Id del Signature (para el Target del QualifyingProperties)
         $dsig->sigNode->setAttribute('Id', $signatureId);
 
-        // Adjunta el certificado público
         $dsig->add509Cert($publicCert, true, false, ['subjectName' => false]);
 
         $dsig->appendSignature($root);
@@ -873,6 +907,17 @@ class SriInvoiceService
         if (abs($pct - 14.0) < 0.01) return '3';
         if (abs($pct - 15.0) < 0.01) return '4';
         return '4';
+    }
+
+    private function mapFormaPagoSri(string $metodo): string
+    {
+        $m = strtoupper(trim($metodo));
+
+        if (str_contains($m, 'TRANSFER')) return '17';
+        if (str_contains($m, 'CRÉDITO') || str_contains($m, 'CREDITO')) return '19';
+        if (str_contains($m, 'DÉBITO') || str_contains($m, 'DEBITO')) return '16';
+
+        return '01'; 
     }
 
 

@@ -4,6 +4,34 @@ import { showSaleAlert } from './pos-utils';
 console.log('[POS] pos-client.js cargado');
 let createClientFormInitialized = false;
 
+function getCfMeta() {
+  const el = document.getElementById('client_id');
+  return {
+    name:  el?.dataset?.cfName  || 'CONSUMIDOR FINAL',
+    ident: el?.dataset?.cfIdent || '9999999999999',
+  };
+}
+
+function setConsumidorFinalUI() {
+  const { name, ident } = getCfMeta();
+
+  const inputId = document.getElementById('client_id');
+  const inputName = document.getElementById('cliente_nombre');
+  const identEl = document.getElementById('cliente_identificacion');
+
+  if (inputId) {
+    inputId.value = '';
+    inputId.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (inputName) inputName.textContent = name;
+  if (identEl) identEl.textContent = ident;
+
+  const select = document.getElementById('cliente_email');
+  const resumen = document.getElementById('cliente_email_resumen');
+  if (select) select.innerHTML = '<option value="">Sin correo (Consumidor Final)</option>';
+  if (resumen) resumen.textContent = 'Sin correo seleccionado';
+}
+
 
 function debounce(fn, delay = 300) {
     let t;
@@ -87,51 +115,12 @@ async function loadAllClients() {
  * si aún no hay client_id asignado en el POS.
  */
 async function selectDefaultConsumidorFinalIfEmpty() {
-    const clientIdInput = document.getElementById('client_id');
-    const nombreEl      = document.getElementById('cliente_nombre');
-    const identEl       = document.getElementById('cliente_identificacion');
-
-    if (!clientIdInput || clientIdInput.value) {
-        return;
-    }
-
-    try {
-        await loadAllClients();
-
-        if (!allClients.length) {
-            console.warn('[POS] No hay clientes para seleccionar por defecto');
-            return;
-        }
-
-        const defaultClient = allClients.find((c) =>
-            (c.business || '').toString().trim().toLowerCase() === 'consumidor final'
-        );
-
-        if (!defaultClient) {
-            console.warn('[POS] No se encontró cliente con business "Consumidor Final"');
-            return;
-        }
-
-        console.log('[POS] Cliente por defecto (Consumidor Final) encontrado:', defaultClient);
-
-        clientIdInput.value = defaultClient.id;
-        clientIdInput.dispatchEvent(new Event('change', { bubbles: true }));
-
-        if (nombreEl) {
-            nombreEl.textContent = defaultClient.business || 'Consumidor final';
-        }
-        if (identEl) {
-            identEl.textContent = defaultClient.identificacion || 'Sin identificación';
-        }
-
-        
-        if (defaultClient.id) {
-            loadClientEmails(defaultClient.id);
-        }
-    } catch (e) {
-        console.error('[POS] Error seleccionando cliente por defecto "Consumidor Final":', e);
-    }
+  const clientIdInput = document.getElementById('client_id');
+  if (!clientIdInput || clientIdInput.value) return;
+  setConsumidorFinalUI();
 }
+
+
 
 
 /**
@@ -224,10 +213,14 @@ async function loadClientEmails(clientId) {
   console.log('[POS] loadClientEmails() llamado con clientId =', clientId);
   console.log('[POS] select encontrado?', !!select);
 
-  if (!select || !clientId) {
-    console.warn('[POS] No hay <select id="cliente_email"> o clientId vacío');
+    if (!select) return;
+
+    if (!clientId) {
+    select.innerHTML = '<option value="">Sin correo (Consumidor Final)</option>';
+    if (resumen) resumen.textContent = 'Sin correo seleccionado';
     return;
-  }
+    }
+
 
   select.innerHTML = '<option value="">Cargando correos...</option>';
   if (resumen) resumen.textContent = 'Cargando correos...';
@@ -315,6 +308,14 @@ async function loadClientEmails(clientId) {
     if (resumen) resumen.textContent = 'Error al cargar correos';
   }
 }
+
+function isConsumidorFinalByIdent(ident) {
+  const { ident: cfIdent } = getCfMeta();
+  const clean = String(ident || '').replace(/\D+/g, '');
+  const cfClean = String(cfIdent || '').replace(/\D+/g, '');
+  return clean && cfClean && clean === cfClean;
+}
+
 
 
 /**
@@ -423,17 +424,17 @@ function setupCreateClientForm() {
                 const identEl   = document.getElementById('cliente_identificacion');
 
                 if (inputId) {
-                    inputId.value = newClient.id;
-                    inputId.dispatchEvent(new Event('change', { bubbles: true }));
+                inputId.value = newClient.id;
+                inputId.dispatchEvent(new Event('change', { bubbles: true }));
                 }
                 if (inputName) {
-                    inputName.textContent =
-                        newClient.business || newClient.nombre || 'Cliente creado';
+                inputName.textContent = newClient.business || newClient.nombre || 'Cliente creado';
                 }
                 if (identEl) {
-                    identEl.textContent =
-                        newClient.identificacion || 'Sin identificación';
+                identEl.textContent = newClient.identificacion || 'Sin identificación';
                 }
+
+
 
                 // Cargar correos del nuevo cliente
                 if (newClient.id) {
@@ -573,23 +574,31 @@ export function initClientSelector() {
             const inputName = document.getElementById('cliente_nombre');
             const identEl   = document.getElementById('cliente_identificacion');
 
+            const isCF = isConsumidorFinalByIdent(clientIdent);
+
+            if (isCF) {
+            setConsumidorFinalUI();
+            } else {
             if (inputId) {
                 inputId.value = clientId;
                 inputId.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            if (inputName) inputName.textContent = clientName || 'Cliente seleccionado';
-            if (identEl)   identEl.textContent = clientIdent || 'Sin identificación';
+            if (inputName) {
+                inputName.textContent = clientName || 'Cliente seleccionado';
+            }
+            if (identEl) {
+                identEl.textContent = clientIdent || 'Sin identificación';
+            }
+            }
+
+
 
             if (searchModal) {
                 searchModal.classList.add('hidden');
             }
 
-            if (clientId) {
-                console.log('[POS] Llamando loadClientEmails desde click en fila');
-                loadClientEmails(clientId);
-            } else {
-                showSaleAlert('No se pudo obtener el ID del cliente seleccionado.', true);
-            }
+            
+
         });
         selectDefaultConsumidorFinalIfEmpty();
     }
@@ -600,7 +609,13 @@ export function initClientSelector() {
             console.log('[POS] Evento change en #client_id, nuevo valor =', id);
             if (id) {
                 loadClientEmails(id);
+            } else {
+                const select = document.getElementById('cliente_email');
+                const resumen = document.getElementById('cliente_email_resumen');
+                if (select) select.innerHTML = '<option value="">Sin correo (Consumidor Final)</option>';
+                if (resumen) resumen.textContent = 'Sin correo seleccionado';
             }
+
         });
     }
 

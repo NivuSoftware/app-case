@@ -145,7 +145,13 @@
                                    class="text-sm font-semibold text-slate-900 truncate">
                                     Consumidor final
                                 </p>
-                                <input type="hidden" id="client_id" value="">
+                                <input
+                                type="hidden"
+                                id="client_id"
+                                value=""
+                                data-cf-name="CONSUMIDOR FINAL"
+                                data-cf-ident="9999999999999"
+                                />
                                 <p id="cliente_identificacion" class="text-[11px] text-slate-400 truncate mt-0.5">
                                     Cédula o RUC aquí
                                 </p>
