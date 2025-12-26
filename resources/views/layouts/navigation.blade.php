@@ -31,6 +31,14 @@
                         Usuarios
                     </a>
                     @endrole
+                    <!-- SRI (SOLO ADMIN) -->
+                    @role('admin')
+                    <a href="{{ route('sri.config.edit') }}"
+                       class="text-blue-100 text-sm font-medium hover:text-white transition
+                              {{ request()->routeIs('sri.*') ? 'underline underline-offset-4 text-white' : '' }}">
+                        Configuración SRI
+                    </a>
+                    @endrole
 
                 </div>
             </div>

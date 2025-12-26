@@ -23,7 +23,6 @@ class SriConfig extends Model
         'ambiente',
         'emision',
         'ruta_certificado',
-        'clave_certificado',
         'obligado_contabilidad',
     ];
 
@@ -31,4 +30,21 @@ class SriConfig extends Model
         'secuencial_factura_actual' => 'integer',
         'obligado_contabilidad'     => 'boolean',
     ];
+
+    /**
+     *  P12 .env
+     */
+    public function getCertPasswordAttribute(): ?string
+    {
+        return env('SRI_CERT_PASSWORD');
+    }
+
+    /**
+     * Path
+     */
+    public function getCertAbsolutePathAttribute(): ?string
+    {
+        if (!$this->ruta_certificado) return null;
+        return storage_path('app/' . ltrim($this->ruta_certificado, '/'));
+    }
 }

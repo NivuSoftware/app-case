@@ -7,6 +7,8 @@ use App\Services\Clients\ClientService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use App\Models\Clients\Client;
+use App\Rules\ValidEcuadorianCedula;
+use Illuminate\Validation\Rule;
 
 
 class ClientController extends Controller
@@ -137,31 +139,39 @@ class ClientController extends Controller
     protected function validateData(Request $request, ?int $ignoreId = null): array
     {
         $tipoIdentificacion = $request->input('tipo_identificacion');
-
-        $identificacionRule = 'required|string|max:20';
+        $identificacionRule = ['required', 'string', 'max:20'];
 
         if ($tipoIdentificacion) {
-            if ($ignoreId) {
-                $identificacionRule .= '|unique:clients,identificacion,' .
-                    $ignoreId . ',id,tipo_identificacion,' . $tipoIdentificacion;
-            } else {
-                $identificacionRule .= '|unique:clients,identificacion,NULL,id,tipo_identificacion,' .
-                    $tipoIdentificacion;
-            }
+            $unique = Rule::unique('clients', 'identificacion')
+                ->where(fn ($q) => $q->where('tipo_identificacion', $tipoIdentificacion));
+
+            if ($ignoreId) $unique->ignore($ignoreId);
+
+            $identificacionRule[] = $unique;
         }
 
-        return $request->validate([
-            'tipo_identificacion' => 'required|in:CEDULA,RUC,PASAPORTE',
-            'identificacion'      => $identificacionRule,
-            'business'            => 'required|string|max:191',
-            'tipo'                => 'required|in:natural,juridico',
-            'telefono'            => 'nullable|string|max:50',
-            'direccion'           => 'nullable|string|max:255',
-            'ciudad'              => 'nullable|string|max:100',
-            'estado'              => 'required|in:activo,inactivo',
+        if ($tipoIdentificacion === 'CEDULA') {
+            $identificacionRule[] = new ValidEcuadorianCedula();
+        }
 
-            'emails'              => 'nullable|array',
-            'emails.*'            => 'nullable|email:rfc,dns|max:191',
+        if ($tipoIdentificacion === 'RUC') {
+            $identificacionRule[] = 'digits:13';
+        }
+
+
+        return $request->validate([
+            'tipo_identificacion' => ['required', Rule::in(['CEDULA','RUC','PASAPORTE'])],
+            'identificacion'      => $identificacionRule,
+
+            'business'            => ['required', 'string', 'max:191'],
+            'tipo'                => ['required', Rule::in(['natural','juridico'])],
+            'telefono'            => ['nullable', 'string', 'max:50'],
+            'direccion'           => ['nullable', 'string', 'max:255'],
+            'ciudad'              => ['nullable', 'string', 'max:100'],
+            'estado'              => ['required', Rule::in(['activo','inactivo'])],
+
+            'emails'              => ['nullable', 'array'],
+            'emails.*'            => ['nullable', 'email:rfc,dns', 'max:191'],
         ]);
     }
 }

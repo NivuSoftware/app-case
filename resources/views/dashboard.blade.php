@@ -130,6 +130,8 @@
                     </div>
                 </a>
                 @endhasrole -->
+                
+
 
                 <!-- Reportes -->
                 @hasrole('admin')

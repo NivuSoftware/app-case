@@ -19,6 +19,7 @@ class SaleItem extends Model
         'cantidad',
         'precio_unitario',
         'descuento',
+        'iva_porcentaje',
         'total',
     ];
 
@@ -26,6 +27,7 @@ class SaleItem extends Model
         'cantidad'       => 'integer',
         'precio_unitario'=> 'decimal:4',
         'descuento'      => 'decimal:2',
+        'iva_porcentaje'  => 'decimal:2',
         'total'          => 'decimal:2',
     ];
 
