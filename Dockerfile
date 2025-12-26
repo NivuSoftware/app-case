@@ -7,11 +7,14 @@ FROM php:8.2-fpm-alpine
 RUN apk add --no-cache \
     git curl zip unzip libpng-dev libjpeg-turbo-dev freetype-dev \
     libzip-dev postgresql-dev \
-    oniguruma-dev icu-dev bash npm nodejs
+    oniguruma-dev icu-dev bash npm nodejs \
+    libxml2-dev $PHPIZE_DEPS
 
 # 🧩 Enable PHP extensions
 RUN docker-php-ext-configure zip && \
-    docker-php-ext-install pdo pdo_pgsql mbstring bcmath zip gd
+    docker-php-ext-install pdo pdo_pgsql mbstring bcmath zip gd soap && \
+    apk del --no-cache $PHPIZE_DEPS
+
 
 # 🎼 Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer

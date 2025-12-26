@@ -22,11 +22,14 @@ class ElectronicInvoice extends Model
         'numero_autorizacion',
         'fecha_autorizacion',
         'mensaje_error',
+        'mensajes_sri_json',
     ];
 
-    protected $casts = [
+   protected $casts = [
         'fecha_autorizacion' => 'datetime',
+        'mensajes_sri_json'  => 'array',
     ];
+
 
     /* ==========================
        RELACIONES

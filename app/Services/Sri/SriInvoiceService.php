@@ -138,9 +138,9 @@ class SriInvoiceService
 
             // ========= 1) RECEPCIÓN =========
             $signedXml = Storage::disk('local')->get($signedPath);
-            $xmlBase64 = base64_encode($signedXml);
 
-            $recep = $this->callRecepcion($urls['reception_wsdl'], $xmlBase64);
+            $recep = $this->callRecepcion($urls['reception_wsdl'], $signedXml);
+
             $estadoRecep = strtoupper((string)($recep['estado'] ?? ''));
             $mensajesRecep = $recep['mensajes'] ?? [];
 
@@ -152,7 +152,7 @@ class SriInvoiceService
                 $invoice->estado_sri = 'RECHAZADO';
             }
 
-            $invoice->mensajes_sri_json = json_encode($mensajesRecep, JSON_UNESCAPED_UNICODE);
+            $invoice->mensajes_sri_json = $mensajesRecep;
             $invoice->save();
 
             // Si no fue RECIBIDA, se detiene aquí (DEVUELTA u otro)
@@ -185,7 +185,7 @@ class SriInvoiceService
                 $invoice->estado_sri = 'RECHAZADO';
             }
 
-            $invoice->mensajes_sri_json = json_encode($mensajesAuth, JSON_UNESCAPED_UNICODE);
+            $invoice->mensajes_sri_json = $mensajesAuth;
 
             if ($numAut) {
                 $invoice->numero_autorizacion = $numAut;
@@ -249,13 +249,14 @@ class SriInvoiceService
         ]);
     }
 
-    private function callRecepcion(string $wsdl, string $xmlBase64): array
+    private function callRecepcion(string $wsdl, string $xmlRaw): array
     {
         try {
             $client = $this->soapClient($wsdl);
 
-            // El SRI suele esperar el parámetro "xml"
-            $resp = $client->validarComprobante(['xml' => $xmlBase64]);
+            $xmlParam = new \SoapVar($xmlRaw, \XSD_BASE64BINARY);
+
+            $resp = $client->validarComprobante(['xml' => $xmlParam]);
 
             $estado = $resp->RespuestaRecepcionComprobante->estado ?? null;
 
@@ -301,6 +302,7 @@ class SriInvoiceService
             ];
         }
     }
+
 
     private function callAutorizacion(string $wsdl, string $claveAcceso): array
     {
@@ -416,14 +418,43 @@ class SriInvoiceService
 
         $fechaEmision = Carbon::parse($sale->fecha_venta)->format('d/m/Y');
 
-        $totalSinImpuestos = number_format((float)($sale->subtotal - $sale->descuento), 2, '.', '');
-        $totalDescuento    = number_format((float)($sale->descuento ?? 0), 2, '.', '');
+        // ==========================
+        // Totales calculados DESDE ITEMS (SRI-friendly)
+        // ==========================
+        $totalSinImpuestosN = 0.0;
+        $totalDescuentoN = 0.0;
+        $ivaTotalN = 0.0;
+        $totalesIva = []; // key: codigoPorcentaje
 
-        $ivaTotal = number_format((float)($sale->iva ?? 0), 2, '.', '');
-        $importeTotal = number_format((float)($sale->total ?? 0), 2, '.', '');
+        foreach ($sale->items as $it) {
+            $base = round((float) $it->total, 2);
+            $desc = round((float) ($it->descuento ?? 0), 2);
+            $pct  = round((float) ($it->iva_porcentaje ?? 0), 2);
 
-        $codigoPorcentaje = ((float)($sale->iva ?? 0) > 0) ? '4' : '0';
-        $tarifa = ((float)($sale->iva ?? 0) > 0) ? '15.00' : '0.00';
+            $ivaLinea = round($base * ($pct / 100), 2);
+
+            $totalSinImpuestosN += $base;
+            $totalDescuentoN += $desc;
+            $ivaTotalN += $ivaLinea;
+
+            $codigoPorcentajeLinea = $this->sriCodigoPorcentajeIva($pct);
+
+            if (!isset($totalesIva[$codigoPorcentajeLinea])) {
+                $totalesIva[$codigoPorcentajeLinea] = [
+                    'tarifa' => number_format($pct, 2, '.', ''),
+                    'base'   => 0.0,
+                    'valor'  => 0.0,
+                ];
+            }
+
+            $totalesIva[$codigoPorcentajeLinea]['base']  += $base;
+            $totalesIva[$codigoPorcentajeLinea]['valor'] += $ivaLinea;
+        }
+
+        $totalSinImpuestos = number_format($totalSinImpuestosN, 2, '.', '');
+        $totalDescuento    = number_format($totalDescuentoN, 2, '.', '');
+        $ivaTotal          = number_format($ivaTotalN, 2, '.', '');
+        $importeTotal      = number_format($totalSinImpuestosN + $ivaTotalN, 2, '.', '');
 
         $xml = new \DOMDocument('1.0', 'UTF-8');
         $xml->formatOutput = true;
@@ -433,6 +464,9 @@ class SriInvoiceService
         $factura->setAttribute('version', '1.1.0');
         $xml->appendChild($factura);
 
+        // ==========================
+        // infoTributaria
+        // ==========================
         $infoTrib = $xml->createElement('infoTributaria');
         $factura->appendChild($infoTrib);
 
@@ -448,6 +482,9 @@ class SriInvoiceService
         $infoTrib->appendChild($xml->createElement('secuencial', $secuencial));
         $infoTrib->appendChild($xml->createElement('dirMatriz', $dirMatriz));
 
+        // ==========================
+        // infoFactura
+        // ==========================
         $infoFac = $xml->createElement('infoFactura');
         $factura->appendChild($infoFac);
 
@@ -460,22 +497,38 @@ class SriInvoiceService
         $infoFac->appendChild($xml->createElement('totalSinImpuestos', $totalSinImpuestos));
         $infoFac->appendChild($xml->createElement('totalDescuento', $totalDescuento));
 
+        // totalConImpuestos (por grupo)
         $tci = $xml->createElement('totalConImpuestos');
         $infoFac->appendChild($tci);
 
-        $totalImp = $xml->createElement('totalImpuesto');
-        $tci->appendChild($totalImp);
+        foreach ($totalesIva as $codigoPorcentaje => $t) {
+            $totalImp = $xml->createElement('totalImpuesto');
+            $tci->appendChild($totalImp);
 
-        $totalImp->appendChild($xml->createElement('codigo', '2'));
-        $totalImp->appendChild($xml->createElement('codigoPorcentaje', $codigoPorcentaje));
-        $totalImp->appendChild($xml->createElement('baseImponible', $totalSinImpuestos));
-        $totalImp->appendChild($xml->createElement('tarifa', $tarifa));
-        $totalImp->appendChild($xml->createElement('valor', $ivaTotal));
+            $totalImp->appendChild($xml->createElement('codigo', '2'));
+            $totalImp->appendChild($xml->createElement('codigoPorcentaje', (string)$codigoPorcentaje));
+            $totalImp->appendChild($xml->createElement('baseImponible', number_format((float)$t['base'], 2, '.', '')));
+            $totalImp->appendChild($xml->createElement('tarifa', $codigoPorcentaje === '0' ? '0.00' : $t['tarifa']));
+            $totalImp->appendChild($xml->createElement('valor', number_format((float)$t['valor'], 2, '.', '')));
+        }
 
         $infoFac->appendChild($xml->createElement('propina', '0.00'));
         $infoFac->appendChild($xml->createElement('importeTotal', $importeTotal));
         $infoFac->appendChild($xml->createElement('moneda', 'DOLAR'));
 
+        // ✅ pagos (MVP)
+        $pagos = $xml->createElement('pagos');
+        $pago  = $xml->createElement('pago');
+        $pago->appendChild($xml->createElement('formaPago', '01')); // efectivo
+        $pago->appendChild($xml->createElement('total', $importeTotal));
+        $pago->appendChild($xml->createElement('plazo', '0'));
+        $pago->appendChild($xml->createElement('unidadTiempo', 'dias'));
+        $pagos->appendChild($pago);
+        $infoFac->appendChild($pagos);
+
+        // ==========================
+        // detalles
+        // ==========================
         $detalles = $xml->createElement('detalles');
         $factura->appendChild($detalles);
 
@@ -496,19 +549,23 @@ class SriInvoiceService
             $imp = $xml->createElement('impuesto');
             $imps->appendChild($imp);
 
-            $imp->appendChild($xml->createElement('codigo', '2'));
-            $imp->appendChild($xml->createElement('codigoPorcentaje', $codigoPorcentaje));
-            $imp->appendChild($xml->createElement('tarifa', $tarifa));
-            $imp->appendChild($xml->createElement('baseImponible', number_format((float)$it->total, 2, '.', '')));
-            $baseLinea = (float) $it->total;
-            $pctLinea  = (float) ($it->iva_porcentaje ?? 0);
+            $pctLinea = round((float) ($it->iva_porcentaje ?? 0), 2);
+            $codigoPorcentajeLinea = $this->sriCodigoPorcentajeIva($pctLinea);
+            $tarifaLinea = $codigoPorcentajeLinea === '0' ? '0.00' : number_format($pctLinea, 2, '.', '');
+
+            $baseLinea = round((float) $it->total, 2);
             $ivaLinea  = round($baseLinea * ($pctLinea / 100), 2);
 
+            $imp->appendChild($xml->createElement('codigo', '2'));
+            $imp->appendChild($xml->createElement('codigoPorcentaje', $codigoPorcentajeLinea));
+            $imp->appendChild($xml->createElement('tarifa', $tarifaLinea));
+            $imp->appendChild($xml->createElement('baseImponible', number_format($baseLinea, 2, '.', '')));
             $imp->appendChild($xml->createElement('valor', number_format($ivaLinea, 2, '.', '')));
         }
 
         return $xml->saveXML();
     }
+
 
     public function signXmlForSale(int $saleId)
     {
@@ -539,7 +596,7 @@ class SriInvoiceService
             }
 
             $certPath = $this->resolveCertPath((string) env('SRI_CERT_PATH'));
-            $certPass = (string) env('SRI_CERT_PASSWORD', '');
+            $certPass = trim((string) env('SRI_CERT_PASSWORD', ''));
 
             if ($certPass === '') {
                 throw ValidationException::withMessages([
@@ -632,6 +689,10 @@ class SriInvoiceService
         $doc->loadXML($xmlString, LIBXML_NOBLANKS);
 
         $root = $doc->documentElement;
+        if (!$root->hasAttribute('id')) {
+            $root->setAttribute('id', 'comprobante');
+        }
+
 
         $signatureId = 'Signature-' . bin2hex(random_bytes(8));
         $signedPropsId = 'SignedProperties-' . bin2hex(random_bytes(8));
@@ -639,51 +700,64 @@ class SriInvoiceService
         $ref0Id = 'Reference-' . bin2hex(random_bytes(8));
         $objectId = 'Object-' . bin2hex(random_bytes(8));
 
+        $xadesNS = 'http://uri.etsi.org/01903/v1.3.2#';
+        $dsNS = 'http://www.w3.org/2000/09/xmldsig#';
+
         $dsig = new XMLSecurityDSig();
         $dsig->setCanonicalMethod(XMLSecurityDSig::EXC_C14N);
+
+        // 1) Reference al documento (enveloped)
         $dsig->addReference(
             $root,
             XMLSecurityDSig::SHA256,
             ['http://www.w3.org/2000/09/xmldsig#enveloped-signature', XMLSecurityDSig::EXC_C14N],
             [
-                'id_name' => 'Id',
+                // ✅ SRI: el root usa atributo "id" (minúscula), no "Id"
+                'id_name' => 'id',
                 'overwrite' => false,
+
+                // ✅ Referencia al id existente del comprobante
                 'force_uri' => true,
-                'uri' => '',
+                'uri' => '#comprobante',
+
+                // Id del nodo <ds:Reference> (esto sí es válido)
                 'id' => $ref0Id,
             ]
         );
 
-        $xadesNS = 'http://uri.etsi.org/01903/v1.3.2#';
-        $dsNS = 'http://www.w3.org/2000/09/xmldsig#';
 
-        $obj = $doc->createElementNS($dsNS, 'ds:Object');
+        // OJO: el Signature Node (sigNode) vive en otro DOMDocument.
+        // Todo lo XAdES se debe crear en este documento:
+        $sigDoc = $dsig->sigNode->ownerDocument;
+
+        // ===== Construcción XAdES (en el documento de la firma) =====
+        $obj = $sigDoc->createElementNS($dsNS, 'ds:Object');
         $obj->setAttribute('Id', $objectId);
 
-        $qual = $doc->createElementNS($xadesNS, 'xades:QualifyingProperties');
+        $qual = $sigDoc->createElementNS($xadesNS, 'xades:QualifyingProperties');
         $qual->setAttribute('Target', "#{$signatureId}");
 
-        $signedProps = $doc->createElementNS($xadesNS, 'xades:SignedProperties');
+        $signedProps = $sigDoc->createElementNS($xadesNS, 'xades:SignedProperties');
         $signedProps->setAttribute('Id', $signedPropsId);
 
-        $ssp = $doc->createElementNS($xadesNS, 'xades:SignedSignatureProperties');
-
-        $signTime = $doc->createElementNS($xadesNS, 'xades:SigningTime', gmdate('Y-m-d\TH:i:s\Z'));
+        // SignedSignatureProperties
+        $ssp = $sigDoc->createElementNS($xadesNS, 'xades:SignedSignatureProperties');
+        $signTime = $sigDoc->createElementNS($xadesNS, 'xades:SigningTime', gmdate('Y-m-d\TH:i:s\Z'));
         $ssp->appendChild($signTime);
 
-        $signingCert = $doc->createElementNS($xadesNS, 'xades:SigningCertificate');
-        $certNode = $doc->createElementNS($xadesNS, 'xades:Cert');
+        $signingCert = $sigDoc->createElementNS($xadesNS, 'xades:SigningCertificate');
+        $certNode = $sigDoc->createElementNS($xadesNS, 'xades:Cert');
 
-        $certDigest = $doc->createElementNS($xadesNS, 'xades:CertDigest');
-        $dm = $doc->createElementNS($dsNS, 'ds:DigestMethod');
+        $certDigest = $sigDoc->createElementNS($xadesNS, 'xades:CertDigest');
+        $dm = $sigDoc->createElementNS($dsNS, 'ds:DigestMethod');
         $dm->setAttribute('Algorithm', 'http://www.w3.org/2001/04/xmlenc#sha256');
-        $dv = $doc->createElementNS($dsNS, 'ds:DigestValue', $certDigestB64);
+        $dv = $sigDoc->createElementNS($dsNS, 'ds:DigestValue', $certDigestB64);
         $certDigest->appendChild($dm);
         $certDigest->appendChild($dv);
 
-        $issuerSerial = $doc->createElementNS($xadesNS, 'xades:IssuerSerial');
-        $x509Issuer = $doc->createElementNS($dsNS, 'ds:X509IssuerName', $issuerName);
-        $x509Serial = $doc->createElementNS($dsNS, 'ds:X509SerialNumber', $serialNumber);
+        $issuerSerial = $sigDoc->createElementNS($xadesNS, 'xades:IssuerSerial');
+        $x509Issuer = $sigDoc->createElementNS($dsNS, 'ds:X509IssuerName', $issuerName);
+        $x509Serial = $sigDoc->createElementNS($dsNS, 'ds:X509SerialNumber', $serialNumber);
         $issuerSerial->appendChild($x509Issuer);
         $issuerSerial->appendChild($x509Serial);
 
@@ -692,16 +766,19 @@ class SriInvoiceService
         $signingCert->appendChild($certNode);
         $ssp->appendChild($signingCert);
 
-        $sdp = $doc->createElementNS($xadesNS, 'xades:SignedDataObjectProperties');
-        $dof = $doc->createElementNS($xadesNS, 'xades:DataObjectFormat');
+        // SignedDataObjectProperties
+        $sdp = $sigDoc->createElementNS($xadesNS, 'xades:SignedDataObjectProperties');
+        $dof = $sigDoc->createElementNS($xadesNS, 'xades:DataObjectFormat');
         $dof->setAttribute('ObjectReference', "#{$ref0Id}");
-        $mime = $doc->createElementNS($xadesNS, 'xades:MimeType', 'text/xml');
+        $mime = $sigDoc->createElementNS($xadesNS, 'xades:MimeType', 'text/xml');
         $dof->appendChild($mime);
         $sdp->appendChild($dof);
 
-        $signedSigProps = $doc->createElementNS($xadesNS, 'xades:SignedSignatureProperties');
+        // SignedProperties debe tener:
+        // <SignedSignatureProperties> y <SignedDataObjectProperties>
+        $signedSigProps = $sigDoc->createElementNS($xadesNS, 'xades:SignedSignatureProperties');
         foreach ($ssp->childNodes as $n) {
-            $signedSigProps->appendChild($doc->importNode($n, true));
+            $signedSigProps->appendChild($n->cloneNode(true));
         }
 
         $signedProps->appendChild($signedSigProps);
@@ -710,7 +787,12 @@ class SriInvoiceService
         $qual->appendChild($signedProps);
         $obj->appendChild($qual);
 
+        // Pega el ds:Object dentro de la firma
         $dsig->sigNode->appendChild($obj);
+
+        // ===== Key / Insert Signature / Add Reference SignedProperties / Sign =====
+        $key = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
+        $key->loadKey(trim($privateKey), false, false);
 
         $dsig->addReference(
             $signedProps,
@@ -726,20 +808,34 @@ class SriInvoiceService
             ]
         );
 
-        $key = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
-        $key->loadKey($privateKey, false, true);
+        $refNodes = $dsig->sigNode->getElementsByTagNameNS($dsNS, 'Reference');
+
+        foreach ($refNodes as $ref) {
+            $id  = $ref->getAttribute('Id');
+            $uri = $ref->getAttribute('URI');
+
+            if ($id === $signedPropsRefId || $uri === "#{$signedPropsId}") {
+                $ref->setAttribute('Type', 'http://uri.etsi.org/01903#SignedProperties');
+                break;
+            }
+        }
+
+
+        // 4) Firma
+        $dsig->sign($key);
+
+        // Set Id del Signature (para el Target del QualifyingProperties)
+        $dsig->sigNode->setAttribute('Id', $signatureId);
+
+        // Adjunta el certificado público
+        $dsig->add509Cert($publicCert, true, false, ['subjectName' => false]);
 
         $dsig->appendSignature($root);
 
-        $dsig->sign($key);
-
-        $dsig->sigNode->setAttribute('Id', $signatureId);
-
-        $dsig->add509Cert($publicCert, true, false, ['subjectName' => false]);
-
-
         return $doc->saveXML();
+
     }
+
 
     private function pemToDer(string $pem): string
     {
@@ -769,5 +865,15 @@ class SriInvoiceService
 
         return implode(',', $parts);
     }
+
+    private function sriCodigoPorcentajeIva(float $pct): string
+    {
+        if ($pct <= 0) return '0';
+        if (abs($pct - 12.0) < 0.01) return '2';
+        if (abs($pct - 14.0) < 0.01) return '3';
+        if (abs($pct - 15.0) < 0.01) return '4';
+        return '4';
+    }
+
 
 }
