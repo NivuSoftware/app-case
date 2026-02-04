@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Sales\SaleController;
 use App\Http\Controllers\Sales\SalePrintController;
+use App\Http\Controllers\Sri\SriInvoiceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -29,6 +30,10 @@ Route::middleware(['auth', 'role:cashier|admin|supervisor'])->group(function () 
     // Ticket / impresión
     Route::get('/ventas/{id}/ticket', [SalePrintController::class, 'ticket'])
         ->name('sales.ticket');
+
+    // Consultar autorizacion SRI (1 vez)
+    Route::post('/sales/{saleId}/sri/consult-authorization', [SriInvoiceController::class, 'consultAuthorization'])
+        ->name('sales.sri.consult_authorization');
 
     /*
     |--------------------------------------------------------------------------

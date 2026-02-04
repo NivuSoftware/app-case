@@ -107,7 +107,7 @@
 
 
                 @hasrole('admin')
-                <a href="#" class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
+                <a href="{{ route('reporteria.menu') }}" class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
                           hover:border-blue-400 hover:shadow-lg transition">
                     <div class="flex flex-col items-center text-center">
 
@@ -119,10 +119,10 @@
                         </svg>
 
                         <h3 class="mt-4 text-lg font-semibold text-blue-900">
-                            Reportes
+                            Reporteria
                         </h3>
                         <p class="text-sm text-blue-700/70 mt-1">
-                            Información y estadísticas
+                            Informacion y estadisticas
                         </p>
                     </div>
                 </a>

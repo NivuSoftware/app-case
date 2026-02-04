@@ -24,6 +24,11 @@ class SriInvoiceService
         private ElectronicInvoiceRepository $repo
     ) {
     }
+    public function isProductionEnv(): bool
+    {
+        $cfg = $this->configService->get();
+        return (int) ($cfg->ambiente ?? 1) === 2;
+    }
 
     public function getInvoiceBySaleId(int $saleId): ?ElectronicInvoice
     {
@@ -209,7 +214,11 @@ class SriInvoiceService
                 DB::transaction(function () use ($invoice, $recep) {
                     $invoice->refresh();
                     $invoice->estado_sri = 'EN_PROCESO';
-                    $invoice->mensajes_sri_json = $this->extractAllMessages($recep);
+                    
+                    $invoice->mensajes_sri_json = $this->mergeMessages(
+                        is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+                        $this->extractAllMessages($recep)
+                    );
                     $invoice->save();
                 });
                 return [
@@ -223,7 +232,11 @@ class SriInvoiceService
                 DB::transaction(function () use ($invoice, $recep) {
                     $invoice->refresh();
                     $invoice->estado_sri = 'ENVIADO';
-                    $invoice->mensajes_sri_json = $this->extractAllMessages($recep);
+                    
+                    $invoice->mensajes_sri_json = $this->mergeMessages(
+                        is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+                        $this->extractAllMessages($recep)
+                    );
                     $invoice->save();
                 });
                 // Continuamos a autorización
@@ -232,7 +245,11 @@ class SriInvoiceService
                 DB::transaction(function () use ($invoice, $recep) {
                     $invoice->refresh();
                     $invoice->estado_sri = 'RECHAZADO';
-                    $invoice->mensajes_sri_json = $this->extractAllMessages($recep);
+                    
+                    $invoice->mensajes_sri_json = $this->mergeMessages(
+                        is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+                        $this->extractAllMessages($recep)
+                    );
                     $invoice->save();
                 });
                 return ['status' => 'REJECTED', 'recep' => $recep, 'invoice' => $invoice->fresh()];
@@ -266,7 +283,12 @@ class SriInvoiceService
 
             if ($estadoAuthFinal === 'ERROR_AUTORIZACION' || $this->authStillProcessing($auth)) {
                 $invoice->estado_sri = 'EN_PROCESO';
-                $invoice->mensajes_sri_json = !empty($auth['mensajes']) ? $auth['mensajes'] : $invoice->mensajes_sri_json;
+                if (!empty($auth['mensajes'])) {
+                    $invoice->mensajes_sri_json = $this->mergeMessages(
+                        is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+                        $auth['mensajes']
+                    );
+                }
                 $invoice->save();
                 return ['status' => 'PROCESSING', 'invoice' => $invoice->fresh(), 'auth' => $auth];
             }
@@ -275,77 +297,60 @@ class SriInvoiceService
         });
     }
 
-    private function shouldSkipReception(ElectronicInvoice $invoice): bool
-    {
-        $state = strtoupper((string) ($invoice->estado_sri ?? ''));
-
-        // Si ya marcaste ENVIADO, tiene sentido ir directo a autorización.
-        if ($state === 'ENVIADO') {
-            return true;
-        }
-
-        // EN_PROCESO solo se “salta” si realmente tienes señal de 70 o duplicado/recibida
-        if ($state === 'EN_PROCESO') {
-            $recep = [
-                'estado' => $invoice->estado_sri,
-                'mensajes' => is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
-            ];
-
-            return $this->hasProcessing70($recep)
-                || $this->isDuplicateAlreadyExists($recep)
-                || $this->isRecibida($recep);
-        }
-
-        // PENDIENTE_REINTENTO => NO se salta: hay que reenviar a recepción.
-        return false;
-    }
-
-    public function pollAuthorizationOnly(int $saleId): array
+    public function consultAuthorizationOnce(int $saleId): array
     {
         $invoice = $this->repo->findBySaleId($saleId);
         if (!$invoice) {
             return ['status' => 'ERROR', 'message' => 'Invoice no encontrado'];
         }
 
+        return $this->consultAuthorizationOnceForInvoice($invoice);
+    }
+
+    public function consultAuthorizationOnceByInvoiceId(int $invoiceId): array
+    {
+        $invoice = ElectronicInvoice::find($invoiceId);
+        if (!$invoice) {
+            return ['status' => 'ERROR', 'message' => 'Invoice no encontrado'];
+        }
+
+        return $this->consultAuthorizationOnceForInvoice($invoice);
+    }
+
+    private function consultAuthorizationOnceForInvoice(ElectronicInvoice $invoice): array
+    {
         if (strtoupper((string) $invoice->estado_sri) === 'AUTORIZADO') {
             return ['status' => 'AUTORIZADO', 'invoice' => $invoice];
         }
 
         $cfg = $this->getCfgOrFail();
         $urls = $this->getWsdlUrls((int) ($cfg->ambiente ?? 1));
-        $claveAcceso = $invoice->clave_acceso;
 
-        $backoffs = [2, 4, 8, 15, 30, 30, 30, 30, 30, 30, 30, 30];
-        $auth = [];
-
-        foreach ($backoffs as $index => $waitSeconds) {
-            $auth = $this->callAutorizacion($urls['authorization_wsdl'], $claveAcceso);
-            $estadoAuth = strtoupper((string) ($auth['estado'] ?? ''));
-
-            Log::info("SRI: Reintento Polling #" . ($index + 1) . " para $claveAcceso. Estado: $estadoAuth");
-
-            if ($estadoAuth === 'AUTORIZADO' || $estadoAuth === 'NO AUTORIZADO') {
-                break;
-            }
-            if ($index < count($backoffs) - 1) {
-                sleep($waitSeconds);
-            }
-        }
+        $auth = $this->callAutorizacion($urls['authorization_wsdl'], $invoice->clave_acceso);
 
         return DB::transaction(function () use ($invoice, $auth) {
             $invoice->refresh();
+
             $estadoAuthFinal = strtoupper((string) ($auth['estado'] ?? ''));
 
             if ($estadoAuthFinal === 'ERROR_AUTORIZACION' || $this->authStillProcessing($auth)) {
                 $invoice->estado_sri = 'EN_PROCESO';
-                $invoice->mensajes_sri_json = !empty($auth['mensajes']) ? $auth['mensajes'] : $invoice->mensajes_sri_json;
+                if (!empty($auth['mensajes'])) {
+                    $invoice->mensajes_sri_json = $this->mergeMessages(
+                        is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+                        $auth['mensajes']
+                    );
+                }
                 $invoice->save();
-                return ['status' => 'PROCESSING', 'invoice' => $invoice->fresh()];
+                return ['status' => 'PROCESSING', 'invoice' => $invoice->fresh(), 'auth' => $auth];
             }
 
             return $this->applyAuthorizationResult($invoice, $auth);
         });
     }
+
+
+
 
 
     public function hasProcessing70(array $recep)
@@ -438,7 +443,10 @@ class SriInvoiceService
             $invoice->estado_sri = 'RECHAZADO';
         }
 
-        $invoice->mensajes_sri_json = $mensajesAuth;
+        $invoice->mensajes_sri_json = $this->mergeMessages(
+            is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+            $mensajesAuth
+        );
 
         if ($numAut) {
             $invoice->numero_autorizacion = $numAut;
@@ -1348,6 +1356,30 @@ class SriInvoiceService
     }
 
     /**
+     * Mergea mensajes SRI (dedup por identificador/mensaje/info).
+     */
+    private function mergeMessages(array $current, array $incoming): array
+    {
+        $all = array_merge($current, $incoming);
+
+        $unique = [];
+        foreach ($all as $m) {
+            $id = (string) ($m['identificador'] ?? '');
+            $msg = (string) ($m['mensaje'] ?? '');
+            $inf = (string) ($m['informacionAdicional'] ?? '');
+            $hash = md5($id . '|' . $msg . '|' . $inf);
+            $unique[$hash] = [
+                'identificador' => $id,
+                'mensaje' => $msg,
+                'informacionAdicional' => $inf,
+                'tipo' => (string) ($m['tipo'] ?? 'ERROR'),
+            ];
+        }
+
+        return array_values($unique);
+    }
+
+    /**
      * Extrae todos los mensajes encontrados en cualquier nivel del array de respuesta.
      */
     private function extractAllMessages(array $data): array
@@ -1453,15 +1485,17 @@ class SriInvoiceService
         return DB::transaction(function () use ($invoice, $auth) {
             $invoice->refresh();
 
-            $estadoAuth = strtoupper((string) ($auth['estado'] ?? ''));
+            $estadoAuthFinal = strtoupper((string) ($auth['estado'] ?? ''));
 
-            if ($estadoAuth === 'ERROR_AUTORIZACION' || $this->authStillProcessing($auth)) {
+            if ($estadoAuthFinal === 'ERROR_AUTORIZACION' || $this->authStillProcessing($auth)) {
                 $invoice->estado_sri = 'EN_PROCESO';
                 if (!empty($auth['mensajes'])) {
-                    $invoice->mensajes_sri_json = $auth['mensajes'];
+                    $invoice->mensajes_sri_json = $this->mergeMessages(
+                        is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+                        $auth['mensajes']
+                    );
                 }
                 $invoice->save();
-
                 return ['status' => 'PROCESSING', 'invoice' => $invoice->fresh(), 'auth' => $auth];
             }
 
@@ -1481,7 +1515,10 @@ class SriInvoiceService
             $isDup = $this->isDuplicateAlreadyExists($recep);
             $recibida = ($estadoRec === 'RECIBIDA');
 
-            $invoice->mensajes_sri_json = $mensajes;
+            $invoice->mensajes_sri_json = $this->mergeMessages(
+                is_array($invoice->mensajes_sri_json) ? $invoice->mensajes_sri_json : [],
+                $mensajes
+            );
 
             if ($is70) {
                 $invoice->estado_sri = 'EN_PROCESO';
