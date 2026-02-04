@@ -5,6 +5,8 @@ namespace App\Repositories\Reporting;
 use App\Models\Sales\Sale;
 use App\Models\Sales\SalePayment;
 use App\Models\Sri\ElectronicInvoice;
+use App\Models\Cashier\CashSession;
+use Illuminate\Support\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -81,5 +83,42 @@ class ReportingRepository
             ->groupByRaw('sales.bodega_id, COALESCE(bodegas.nombre, \'Sin bodega\')')
             ->orderByDesc('total_facturado')
             ->get();
+    }
+
+    public function getClosedCashSessionsByDate(string $fechaStr): Collection
+    {
+        return CashSession::with(['opener', 'closer'])
+            ->whereNotNull('closed_at')
+            ->whereDate('closed_at', $fechaStr)
+            ->orderBy('closed_at', 'asc')
+            ->get();
+    }
+
+    public function getPaymentTotalsForUserBetween(int $userId, Carbon $from, Carbon $to): Collection
+    {
+        return SalePayment::query()
+            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+            ->leftJoin('payment_methods', 'sale_payments.payment_method_id', '=', 'payment_methods.id')
+            ->where('sales.user_id', $userId)
+            ->whereBetween('sales.fecha_venta', [$from, $to])
+            ->selectRaw('COALESCE(payment_methods.nombre, sale_payments.metodo) as metodo')
+            ->selectRaw('COUNT(sale_payments.id) as pagos')
+            ->selectRaw('COUNT(DISTINCT sales.id) as ventas')
+            ->selectRaw('SUM(sale_payments.monto) as total_monto')
+            ->groupByRaw('COALESCE(payment_methods.nombre, sale_payments.metodo)')
+            ->orderByDesc('total_monto')
+            ->get();
+    }
+
+    public function getPaymentMethodsBetween(Carbon $from, Carbon $to): Collection
+    {
+        return SalePayment::query()
+            ->join('sales', 'sale_payments.sale_id', '=', 'sales.id')
+            ->leftJoin('payment_methods', 'sale_payments.payment_method_id', '=', 'payment_methods.id')
+            ->whereBetween('sales.fecha_venta', [$from, $to])
+            ->selectRaw('COALESCE(payment_methods.nombre, sale_payments.metodo) as metodo')
+            ->distinct()
+            ->orderBy('metodo')
+            ->pluck('metodo');
     }
 }

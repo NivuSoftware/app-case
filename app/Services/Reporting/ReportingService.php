@@ -223,4 +223,150 @@ class ReportingService
 
         return implode('', $html);
     }
+
+    public function getCashClosuresDaily(Request $request): array
+    {
+        $fechaInput = trim((string) $request->query('fecha', ''));
+        $fecha = null;
+
+        if ($fechaInput !== '') {
+            try {
+                $fecha = Carbon::parse($fechaInput)->startOfDay();
+            } catch (\Throwable $e) {
+                $fecha = null;
+            }
+        }
+
+        if (!$fecha) {
+            $fecha = now()->startOfDay();
+        }
+
+        $fechaStr = $fecha->toDateString();
+        $sessions = $this->reporting->getClosedCashSessionsByDate($fechaStr);
+
+        $sessions->transform(function ($session) {
+            $openedAt = $session->opened_at;
+            $closedAt = $session->closed_at;
+            $session->duration_text = 'N/D';
+
+            if ($openedAt && $closedAt) {
+                $minutes = (int) $openedAt->diffInMinutes($closedAt);
+                $hours = intdiv($minutes, 60);
+                $mins = $minutes % 60;
+                $session->duration_text = sprintf('%dh %02dm', $hours, $mins);
+            }
+
+            $session->payment_methods = collect();
+            $session->payment_total = 0.0;
+            if ($session->opened_at && $session->closed_at) {
+                // Tolerancia para ventas registradas justo antes de apertura
+                $from = $session->opened_at->copy()->subMinutes(5);
+                $to = $session->closed_at;
+
+                $session->payment_methods = $this->reporting->getPaymentMethodsBetween(
+                    $from,
+                    $to
+                );
+            }
+
+            $result = strtoupper((string) ($session->result ?? ''));
+            $session->result_label = $result === 'MATCH'
+                ? 'CUADRA'
+                : ($result === 'SHORT'
+                    ? 'FALTANTE'
+                    : ($result === 'OVER'
+                        ? 'SOBRANTE'
+                        : ($result !== '' ? $result : 'N/D')
+                    )
+                );
+
+            return $session;
+        });
+
+        return [
+            'fecha' => $fechaStr,
+            'sessions' => $sessions,
+        ];
+    }
+
+    public function exportCashClosuresDaily(Request $request): Response
+    {
+        $payload = $this->getCashClosuresDaily($request);
+
+        $fecha = (string) ($payload['fecha'] ?? now()->toDateString());
+        $filename = "cierres_caja_diarios_{$fecha}.xls";
+
+        $html = $this->buildCashClosuresDailyExcelHtml($payload);
+
+        return response($html, 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
+    private function buildCashClosuresDailyExcelHtml(array $payload): string
+    {
+        $fecha = (string) ($payload['fecha'] ?? '');
+        $sessions = $payload['sessions'] ?? collect();
+
+        $headerBg = '#1D4ED8';
+        $headerText = '#FFFFFF';
+        $subHeaderBg = '#DBEAFE';
+        $border = '#BFDBFE';
+        $text = '#0F172A';
+
+        $html = [];
+        $html[] = '<html><head><meta charset="utf-8" />';
+        $html[] = '<style>';
+        $html[] = "body{font-family:Calibri, Arial, sans-serif;color:{$text};}";
+        $html[] = "table{border-collapse:collapse;width:100%;}";
+        $html[] = "th,td{border:1px solid {$border};padding:6px;font-size:12px;}";
+        $html[] = ".title{background:{$headerBg};color:{$headerText};font-weight:bold;font-size:16px;text-align:left;}";
+        $html[] = ".section{background:{$subHeaderBg};font-weight:bold;}";
+        $html[] = ".right{text-align:right;}";
+        $html[] = '</style></head><body>';
+
+        $html[] = '<table>';
+        $html[] = '<tr><td class="title" colspan="13">Cierres de caja diarios</td></tr>';
+        $html[] = '<tr><td class="section" colspan="13">Resumen</td></tr>';
+        $html[] = '<tr><td>Fecha</td><td colspan="12">' . e($fecha) . '</td></tr>';
+        $html[] = '<tr><td>Total cierres</td><td colspan="12">' . (int) ($sessions->count()) . '</td></tr>';
+
+        $html[] = '<tr><td colspan="13"></td></tr>';
+        $html[] = '<tr>';
+        $html[] = '<th>Caja</th><th>Apertura</th><th>Cierre</th><th>Horas</th><th>Usuario apertura</th><th>Usuario cierre</th>';
+        $html[] = '<th class="right">Esperado</th><th class="right">Declarado</th><th class="right">Diferencia</th><th>Resultado</th>';
+        $html[] = '<th>Formas de pago</th><th>Notas</th>';
+        $html[] = '</tr>';
+
+        foreach ($sessions as $s) {
+            $metodos = ($s->payment_methods ?? collect())->filter()->values()->all();
+            $metodosText = count($metodos) ? implode(', ', $metodos) : '-';
+            $html[] = '<tr>';
+            $html[] = '<td>#' . (int) $s->caja_id . '</td>';
+            $html[] = '<td>' . e($s->opened_at?->format('Y-m-d H:i') ?? 'N/D') . '</td>';
+            $html[] = '<td>' . e($s->closed_at?->format('Y-m-d H:i') ?? 'N/D') . '</td>';
+            $html[] = '<td>' . e($s->duration_text ?? 'N/D') . '</td>';
+            $html[] = '<td>' . e($s->opener?->name ?? 'N/D') . '</td>';
+            $html[] = '<td>' . e($s->closer?->name ?? 'N/D') . '</td>';
+            $html[] = '<td class="right">$' . number_format((float) ($s->expected_amount ?? 0), 2) . '</td>';
+            $html[] = '<td class="right">$' . number_format((float) ($s->declared_amount ?? 0), 2) . '</td>';
+            $html[] = '<td class="right">$' . number_format((float) ($s->difference_amount ?? 0), 2) . '</td>';
+            $html[] = '<td>' . e($s->result_label ?? 'N/D') . '</td>';
+            $html[] = '<td>' . e($metodosText) . '</td>';
+            $html[] = '<td>' . e($s->notes ?? '-') . '</td>';
+            $html[] = '</tr>';
+        }
+
+        if ($sessions->isEmpty()) {
+            $html[] = '<tr><td colspan="13">No hay cierres registrados para este dia.</td></tr>';
+        }
+
+        $html[] = '</table>';
+        $html[] = '</body></html>';
+
+        return implode('', $html);
+    }
 }

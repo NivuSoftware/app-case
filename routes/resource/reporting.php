@@ -23,4 +23,10 @@ Route::middleware(['auth', 'role:admin'])
 
         Route::get('/ventas-diarias-forma-pago/export', [ReportingController::class, 'exportDailySalesByPaymentMethod'])
             ->name('reporteria.sales.daily.by-payment.export');
+
+        Route::get('/cierres-caja-diarios', [ReportingController::class, 'cashClosuresDaily'])
+            ->name('reporteria.cashier.closures.daily');
+
+        Route::get('/cierres-caja-diarios/export', [ReportingController::class, 'exportCashClosuresDaily'])
+            ->name('reporteria.cashier.closures.daily.export');
     });

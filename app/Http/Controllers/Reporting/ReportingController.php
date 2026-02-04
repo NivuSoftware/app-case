@@ -39,4 +39,16 @@ class ReportingController extends Controller
     {
         return $this->reporting->exportDailySalesByPaymentMethod($request);
     }
+
+    public function cashClosuresDaily(Request $request)
+    {
+        $payload = $this->reporting->getCashClosuresDaily($request);
+
+        return view('reporting.cashier.closures-daily', $payload);
+    }
+
+    public function exportCashClosuresDaily(Request $request)
+    {
+        return $this->reporting->exportCashClosuresDaily($request);
+    }
 }
