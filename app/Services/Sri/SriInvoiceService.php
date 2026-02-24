@@ -820,7 +820,9 @@ class SriInvoiceService
             $qty = (float) $it->cantidad;
 
             $base = round((float) ($it->total ?? 0), 2); // sin IVA
-            $desc = round((float) ($it->descuento ?? 0), 2);
+            $pct = round((float) ($it->iva_porcentaje ?? 0), 2);
+            $descGross = round((float) ($it->descuento ?? 0), 2);
+            $desc = $pct > 0 ? round($descGross / (1 + ($pct / 100)), 2) : $descGross;
 
             if ($desc < 0)
                 $desc = 0;
@@ -830,7 +832,6 @@ class SriInvoiceService
             // subtotal (antes de descuento) derivado de lo persistido (base + desc)
             $subtotalLinea = round($base + $desc, 2);
 
-            $pct = round((float) ($it->iva_porcentaje ?? 0), 2);
             $ivaLinea = round($base * ($pct / 100), 2);
 
             $totalSinImpuestos += $base;
@@ -883,7 +884,9 @@ class SriInvoiceService
                 $qty = 1;
 
             $base = round((float) ($it->total ?? 0), 2);
-            $desc = round((float) ($it->descuento ?? 0), 2);
+            $pct = round((float) ($it->iva_porcentaje ?? 0), 2);
+            $descGross = round((float) ($it->descuento ?? 0), 2);
+            $desc = $pct > 0 ? round($descGross / (1 + ($pct / 100)), 2) : $descGross;
             if ($desc < 0)
                 $desc = 0;
 
@@ -892,7 +895,6 @@ class SriInvoiceService
             // ✅ precio unitario calculado para que cuadre con subtotal y descuento
             $precioUnitarioXml = $qty > 0 ? round($subtotalLinea / $qty, 6) : 0.0;
 
-            $pct = round((float) ($it->iva_porcentaje ?? 0), 2);
             $ivaLinea = round($base * ($pct / 100), 2);
 
             $el('codigoPrincipal', (string) ($it->producto?->codigo_barras ?? $it->producto_id), $det);

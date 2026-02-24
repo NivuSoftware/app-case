@@ -9,6 +9,8 @@ use Symfony\Component\HttpFoundation\Response;
 use App\Models\Clients\Client;
 use App\Rules\ValidEcuadorianCedula;
 use Illuminate\Validation\Rule;
+use Illuminate\Database\QueryException;
+use Illuminate\Validation\ValidationException;
 
 
 class ClientController extends Controller
@@ -47,18 +49,70 @@ class ClientController extends Controller
 
     public function store(Request $request)
     {
-        $data = $this->validateData($request);
+        $tipoIdentificacion = (string) $request->input('tipo_identificacion', '');
+        $identificacion = (string) $request->input('identificacion', '');
 
-        $client = $this->service->create($data);
+        try {
+            $data = $this->validateData($request);
+            $client = $this->service->create($data);
 
-        if ($request->ajax() || $request->wantsJson()) {
-            return response()->json([
-                'ok'      => true,
-                'message' => 'Cliente creado correctamente',
-                'data'    => $client,
-            ], Response::HTTP_CREATED);
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'ok'      => true,
+                    'message' => 'Cliente creado correctamente',
+                    'data'    => $client,
+                ], Response::HTTP_CREATED);
+            }
+
+            return back()->with('success', 'Cliente creado correctamente.');
+        } catch (ValidationException $e) {
+            $existing = null;
+            if ($tipoIdentificacion !== '' && $identificacion !== '') {
+                $existing = $this->service->findByIdentificacion($tipoIdentificacion, $identificacion);
+            }
+
+            if (($request->ajax() || $request->wantsJson()) && $existing) {
+                return response()->json([
+                    'ok' => true,
+                    'message' => 'Cliente ya registrado. Se usará el existente.',
+                    'data' => $existing,
+                ], Response::HTTP_OK);
+            }
+
+            throw $e;
+        } catch (QueryException $e) {
+            // PostgreSQL unique_violation
+            if (($e->getCode() ?? '') === '23505') {
+                $existing = null;
+                if ($tipoIdentificacion !== '' && $identificacion !== '') {
+                    $existing = $this->service->findByIdentificacion($tipoIdentificacion, $identificacion);
+                }
+
+                if (($request->ajax() || $request->wantsJson()) && $existing) {
+                    return response()->json([
+                        'ok' => true,
+                        'message' => 'Cliente ya registrado. Se usará el existente.',
+                        'data' => $existing,
+                    ], Response::HTTP_OK);
+                }
+
+                $msg = 'Ya existe un cliente con ese tipo de identificación e identificación.';
+
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => $msg,
+                        'errors' => [
+                            'identificacion' => [$msg],
+                        ],
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                return back()->withErrors(['identificacion' => $msg])->withInput();
+            }
+
+            throw $e;
         }
-        return back()->with('success', 'Cliente creado correctamente.');
     }
 
     public function show(int $id)
@@ -176,7 +230,7 @@ class ClientController extends Controller
             'estado'              => ['required', Rule::in(['activo','inactivo'])],
 
             'emails'              => ['nullable', 'array'],
-            'emails.*'            => ['nullable', 'email:rfc,dns', 'max:191'],
+            'emails.*'            => ['nullable', 'email:rfc', 'max:191'],
         ]);
     }
 }

@@ -82,6 +82,7 @@ class SaleService
 
             $subtotalCents = 0;
             $descuentoCents = 0;
+            $baseImponibleCents = 0;
             $ivaCents = 0;
             $impuestoCents = 0;
 
@@ -130,7 +131,7 @@ class SaleService
                     ]);
                 }
 
-                $lineBaseCts = $lineSubtotalCts - $descCts;
+                $lineTotalWithIvaCts = $lineSubtotalCts - $descCts;
 
                 $ivaPctProducto = $product->iva_porcentaje;
                 if ($ivaPctProducto === null || $ivaPctProducto === '') {
@@ -139,8 +140,11 @@ class SaleService
 
                 $ivaPctFinal = $ivaEnabled ? (float) $ivaPctProducto : 0.0;
                 $bp = $toBp($ivaPctFinal);
-
-                $lineIvaCts = (int) floor(($lineBaseCts * $bp + 5000) / 10000);
+                $divisor = 10000 + $bp;
+                $lineBaseCts = $divisor > 0
+                    ? (int) floor(($lineTotalWithIvaCts * 10000 + intdiv($divisor, 2)) / $divisor)
+                    : $lineTotalWithIvaCts;
+                $lineIvaCts = $lineTotalWithIvaCts - $lineBaseCts;
 
                 $item['precio_unitario'] = $precioUnitario;
                 $item['iva_porcentaje'] = $ivaPctFinal;
@@ -152,14 +156,14 @@ class SaleService
 
                 $subtotalCents += $lineSubtotalCts;
                 $descuentoCents += $descCts;
+                $baseImponibleCents += $lineBaseCts;
                 $ivaCents += $lineIvaCts;
             }
             unset($item);
 
-            $baseImponibleCents = $subtotalCents - $descuentoCents;
             $totalCents = $baseImponibleCents + $impuestoCents + $ivaCents;
 
-            $subtotal = $fromCents($subtotalCents);
+            $subtotal = $fromCents($baseImponibleCents);
             $descuentoTotal = $fromCents($descuentoCents);
             $impuesto = $fromCents($impuestoCents);
             $iva = $fromCents($ivaCents);

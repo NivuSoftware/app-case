@@ -356,6 +356,7 @@ function setupCreateClientForm() {
     createClientFormInitialized = true;
 
     const tipoSelect      = modal.querySelector('select[name="tipo"]');
+    const tipoIdSelect    = modal.querySelector('select[name="tipo_identificacion"]');
     const naturalFields   = modal.querySelector('#create-natural-fields');
     const juridicoFields  = modal.querySelector('#create-juridico-fields');
     const form            = modal.querySelector('#createClientForm'); // <form id="createClientForm">
@@ -366,6 +367,25 @@ function setupCreateClientForm() {
             const isJuridico = tipoSelect.value === 'juridico';
             if (naturalFields)  naturalFields.classList.toggle('hidden', isJuridico);
             if (juridicoFields) juridicoFields.classList.toggle('hidden', !isJuridico);
+
+            if (tipoIdSelect) {
+                const cedulaOption = tipoIdSelect.querySelector('option[value="CEDULA"]');
+                const pasaporteOption = tipoIdSelect.querySelector('option[value="PASAPORTE"]');
+                if (cedulaOption) {
+                    cedulaOption.hidden = isJuridico;
+                    cedulaOption.disabled = isJuridico;
+                }
+                if (pasaporteOption) {
+                    pasaporteOption.hidden = isJuridico;
+                    pasaporteOption.disabled = isJuridico;
+                }
+
+                if (isJuridico && ['CEDULA', 'PASAPORTE'].includes(tipoIdSelect.value)) {
+                    const rucOption = tipoIdSelect.querySelector('option[value="RUC"]');
+                    tipoIdSelect.value = rucOption ? 'RUC' : '';
+                }
+            }
+
             updateCreateBusiness();
         };
 

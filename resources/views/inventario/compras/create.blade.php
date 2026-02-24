@@ -1,4 +1,4 @@
-<x-app-layout>
+﻿<x-app-layout>
 
     {{-- HEADER --}}
     <x-slot name="header">
@@ -27,9 +27,9 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-1">
-                                Proveedor
+                                Proveedor *
                             </label>
-                            <select id="supplier_id" class="border rounded w-full px-3 py-2 text-sm">
+                            <select id="supplier_id" required class="border rounded w-full px-3 py-2 text-sm">
                                 <option value="">-- Seleccione --</option>
                                 @foreach($suppliers as $s)
                                     <option value="{{ $s->id }}">{{ $s->nombre }}</option>
@@ -39,17 +39,15 @@
 
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-1">
-                                Fecha de compra
+                                Fecha de compra *
                             </label>
-                            <input id="fecha_compra" type="date" value="{{ now()->toDateString() }}"
-                                class="border rounded w-full px-3 py-2 text-sm">
+                            <input id="fecha_compra" type="date" value="{{ now()->toDateString() }}" required class="border rounded w-full px-3 py-2 text-sm">
                         </div>
 
                         <div class="md:col-span-2">
                             <label class="block text-xs font-semibold text-gray-600 mb-1">
-                                Descripción / Nota
-                            </label>
-                            <input id="descripcion" type="text" class="border rounded w-full px-3 py-2 text-sm"
+                                Descripción / Nota *</label>
+                            <input id="descripcion" type="text" required class="border rounded w-full px-3 py-2 text-sm"
                                 placeholder="Ej: Compra mensual de stock, reposición de productos, etc.">
                         </div>
                     </div>
@@ -62,9 +60,10 @@
                     <div class="space-y-3">
                         <div>
                             <label class="block text-xs font-semibold text-gray-600 mb-1">
-                                Método de pago
+                                Método de pago *
                             </label>
-                            <select id="metodo_pago" class="border rounded w-full px-3 py-2 text-sm">
+                            <select id="metodo_pago" required class="border rounded w-full px-3 py-2 text-sm">
+                                <option value="">-- Seleccione --</option>
                                 <option value="efectivo">Efectivo</option>
                                 <option value="transferencia">Transferencia</option>
                                 <option value="tarjeta">Tarjeta</option>
@@ -165,6 +164,7 @@
                             Costo unitario (USD)
                         </label>
                         <input id="c-costo" type="number" min="0" step="0.0001"
+                            onkeydown="handleCostoUnitarioEnter(event)"
                             class="border rounded w-full px-2 py-1 text-xs" />
                     </div>
                 </div>
@@ -294,6 +294,12 @@
             document.getElementById('product_search').focus();
         }
 
+        function handleCostoUnitarioEnter(event) {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            agregarItem();
+        }
+
         /* -----------------------------------------------------
            BÚSQUEDA DE PRODUCTOS (AUTOCOMPLETE)
            ----------------------------------------------------- */
@@ -309,13 +315,56 @@
                 return;
             }
 
-            const term = texto.toLowerCase();
+            const rawTerm = texto.trim().toLowerCase();
+            const compactTerm = rawTerm.replace(/\s+/g, '');
+            const digitsOnly = compactTerm.replace(/\D/g, '');
+
+            // Escáneres pueden inyectar prefijos (ej: letras) o dañar el primer carácter.
+            // Probamos varias formas del término antes de mostrar sugerencias.
+            const candidates = new Set([compactTerm]);
+            if (digitsOnly) candidates.add(digitsOnly);
+            if (compactTerm.length > 1 && /^\D\d+$/.test(compactTerm)) {
+                candidates.add(compactTerm.slice(1));
+            }
+
+            let exactCodeMatch = null;
+            for (const c of candidates) {
+                exactCodeMatch = PRODUCTS.find(p => {
+                    const code = (p.codigo_interno || '').trim().toLowerCase();
+                    const bar = (p.codigo_barras || '').trim().toLowerCase();
+                    return code === c || bar === c;
+                });
+                if (exactCodeMatch) break;
+            }
+
+            // Fallback para scanner: primer carácter corrupto, pero resto correcto.
+            if (!exactCodeMatch && compactTerm.length > 1 && /^\D\d+$/.test(compactTerm)) {
+                const suffix = compactTerm.slice(1);
+                const matchesBySuffix = PRODUCTS.filter(p => {
+                    const bar = (p.codigo_barras || '').trim().toLowerCase();
+                    return bar.endsWith(suffix);
+                });
+                if (matchesBySuffix.length === 1) {
+                    exactCodeMatch = matchesBySuffix[0];
+                }
+            }
+
+            if (exactCodeMatch) {
+                seleccionarProducto(exactCodeMatch);
+                return;
+            }
+
             // Filtrar productos por nombre, cod interno o cod barras
             const results = PRODUCTS.filter(p => {
                 const name = (p.nombre || '').toLowerCase();
                 const code = (p.codigo_interno || '').toLowerCase();
                 const bar = (p.codigo_barras || '').toLowerCase();
-                return name.includes(term) || code.includes(term) || bar.includes(term);
+                return (
+                    name.includes(rawTerm) ||
+                    code.includes(compactTerm) ||
+                    bar.includes(compactTerm) ||
+                    (digitsOnly && (code.includes(digitsOnly) || bar.includes(digitsOnly)))
+                );
             }).slice(0, 10); // Limitar a 10 resultados para no saturar
 
             list.innerHTML = '';
@@ -528,17 +577,17 @@
         async function guardarCompra() {
             const supplierId = document.getElementById('supplier_id').value;
             const fechaCompra = document.getElementById('fecha_compra').value;
-            const descripcion = document.getElementById('descripcion').value;
+            const descripcion = document.getElementById('descripcion').value.trim();
             const metodoPago = document.getElementById('metodo_pago').value;
             const montoPagado = parseFloat(document.getElementById('monto_pagado').value || '0');
             const referencia = document.getElementById('referencia').value;
             const observ = document.getElementById('observaciones').value;
 
-            if (!supplierId || !fechaCompra || !metodoPago) {
+            if (!supplierId || !fechaCompra || !descripcion || !metodoPago) {
                 if (window.Swal) {
-                    Swal.fire('Datos incompletos', 'Proveedor, fecha y método de pago son obligatorios.', 'warning');
+                    Swal.fire('Datos incompletos', 'Proveedor, fecha, descripción y método de pago son obligatorios.', 'warning');
                 } else {
-                    alert('Proveedor, fecha y método de pago son obligatorios.');
+                    alert('Proveedor, fecha, descripción y método de pago son obligatorios.');
                 }
                 return;
             }
@@ -564,7 +613,7 @@
             const payload = {
                 supplier_id: parseInt(supplierId),
                 fecha_compra: fechaCompra,
-                descripcion: descripcion || null,
+                descripcion: descripcion,
                 metodo_pago: metodoPago,
                 pago_inicial: montoPagado,          // se registra 100% pagado
                 referencia: referencia || null,
@@ -619,3 +668,6 @@
     </script>
 
 </x-app-layout>
+
+
+

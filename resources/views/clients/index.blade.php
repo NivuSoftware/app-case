@@ -541,6 +541,28 @@
 
     // ---------- FILTROS + LÓGICA MODAL CREAR (DOMContentLoaded) ----------
     document.addEventListener('DOMContentLoaded', () => {
+        const syncTipoIdentificacionByTipoPersona = (tipoSelect, tipoIdSelect) => {
+            if (!tipoSelect || !tipoIdSelect) return;
+
+            const cedulaOption = tipoIdSelect.querySelector('option[value="CEDULA"]');
+            const pasaporteOption = tipoIdSelect.querySelector('option[value="PASAPORTE"]');
+
+            const isJuridico = tipoSelect.value === 'juridico';
+            if (cedulaOption) {
+                cedulaOption.hidden = isJuridico;
+                cedulaOption.disabled = isJuridico;
+            }
+            if (pasaporteOption) {
+                pasaporteOption.hidden = isJuridico;
+                pasaporteOption.disabled = isJuridico;
+            }
+
+            if (isJuridico && ['CEDULA', 'PASAPORTE'].includes(tipoIdSelect.value)) {
+                const rucOption = tipoIdSelect.querySelector('option[value="RUC"]');
+                tipoIdSelect.value = rucOption ? 'RUC' : '';
+            }
+        };
+
         // ---- filtros "al toque" ----
         const form = document.getElementById('clientsFilterForm');
         if (form) {
@@ -576,6 +598,7 @@
         const razonInput = document.getElementById("create-razon-social");
         const businessInput = document.getElementById("create-business");
         const createForm = modal.querySelector("form");
+        const tipoIdentCreate = modal.querySelector('select[name="tipo_identificacion"]');
 
         // función global para que la use openCreateModal()
         window.toggleCreatePersonaFields = function () {
@@ -587,6 +610,7 @@
                 if (naturalFields) naturalFields.classList.remove("hidden");
                 if (juridicoFields) juridicoFields.classList.add("hidden");
             }
+            syncTipoIdentificacionByTipoPersona(tipoSelectPersona, tipoIdentCreate);
         };
 
         if (tipoSelectPersona) {
@@ -596,13 +620,74 @@
         }
 
         if (createForm && businessInput) {
-            createForm.addEventListener("submit", function () {
+            window.__clientsCreateSubmitting = false;
+            createForm.addEventListener("submit", async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') {
+                    e.stopImmediatePropagation();
+                }
+
+                if (window.__clientsCreateSubmitting) return;
+                window.__clientsCreateSubmitting = true;
+
+                const submitBtn = createForm.querySelector('button[type="submit"]');
+                if (submitBtn) submitBtn.disabled = true;
+
                 if (tipoSelectPersona && tipoSelectPersona.value === "juridico") {
                     businessInput.value = razonInput ? razonInput.value.trim() : "";
                 } else {
                     const nombres = nombresInput ? nombresInput.value.trim() : "";
                     const apellidos = apellidosInput ? apellidosInput.value.trim() : "";
                     businessInput.value = (nombres + " " + apellidos).trim();
+                }
+
+                const fd = new FormData(createForm);
+
+                try {
+                    const res = await fetch(createForm.action, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: fd,
+                        credentials: 'same-origin',
+                    });
+
+                    const data = await res.json().catch(() => ({}));
+
+                    if (!res.ok) {
+                        const fieldErrors = data?.errors
+                            ? Object.values(data.errors).flat().join('\n')
+                            : '';
+                        const msg = fieldErrors || data?.message || 'No se pudo crear el cliente.';
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: msg,
+                        });
+                        return;
+                    }
+
+                    try {
+                        sessionStorage.setItem(
+                            'clients_success_message',
+                            data?.message || 'Cliente creado correctamente.'
+                        );
+                    } catch (_) {}
+
+                    window.location.reload();
+                } catch (err) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'Error de comunicación al crear el cliente.',
+                    });
+                } finally {
+                    window.__clientsCreateSubmitting = false;
+                    if (submitBtn) submitBtn.disabled = false;
                 }
             });
         }
@@ -618,6 +703,7 @@
             const razonInputEdit = document.getElementById("edit-razon-social");
             const businessInputEdit = document.getElementById("edit-business");
             const editForm = document.getElementById("editClientForm");
+            const tipoIdentEdit = editModal.querySelector('select[name="tipo_identificacion"]');
 
             window.toggleEditPersonaFields = function () {
                 if (!tipoSelectEdit) return;
@@ -628,6 +714,7 @@
                     if (naturalFieldsEdit) naturalFieldsEdit.classList.remove("hidden");
                     if (juridicoFieldsEdit) juridicoFieldsEdit.classList.add("hidden");
                 }
+                syncTipoIdentificacionByTipoPersona(tipoSelectEdit, tipoIdentEdit);
             };
 
             if (tipoSelectEdit) {
@@ -637,13 +724,69 @@
             }
 
             if (editForm && businessInputEdit) {
-                editForm.addEventListener("submit", function () {
+                let editSubmitting = false;
+                editForm.addEventListener("submit", async function (e) {
+                    e.preventDefault();
+                    if (editSubmitting) return;
+                    editSubmitting = true;
+
+                    const submitBtn = editForm.querySelector('button[type="submit"]');
+                    if (submitBtn) submitBtn.disabled = true;
+
                     if (tipoSelectEdit && tipoSelectEdit.value === "juridico") {
                         businessInputEdit.value = razonInputEdit ? razonInputEdit.value.trim() : "";
                     } else {
                         const nombres = nombresInputEdit ? nombresInputEdit.value.trim() : "";
                         const apellidos = apellidosInputEdit ? apellidosInputEdit.value.trim() : "";
                         businessInputEdit.value = (nombres + " " + apellidos).trim();
+                    }
+
+                    const fd = new FormData(editForm);
+
+                    try {
+                        const res = await fetch(editForm.action, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json',
+                            },
+                            body: fd,
+                            credentials: 'same-origin',
+                        });
+
+                        const data = await res.json().catch(() => ({}));
+
+                        if (!res.ok) {
+                            const fieldErrors = data?.errors
+                                ? Object.values(data.errors).flat().join('\n')
+                                : '';
+                            const msg = fieldErrors || data?.message || 'No se pudo actualizar el cliente.';
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: msg,
+                            });
+                            return;
+                        }
+
+                        try {
+                            sessionStorage.setItem(
+                                'clients_success_message',
+                                data?.message || 'Cliente actualizado correctamente.'
+                            );
+                        } catch (_) {}
+
+                        window.location.reload();
+                    } catch (err) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: 'Error de comunicación al actualizar el cliente.',
+                        });
+                    } finally {
+                        editSubmitting = false;
+                        if (submitBtn) submitBtn.disabled = false;
                     }
                 });
             }
@@ -652,6 +795,22 @@
     });
 
     // ---------- ALERTAS GLOBALES (SWEETALERT) ----------
+    document.addEventListener('DOMContentLoaded', () => {
+        try {
+            const msg = sessionStorage.getItem('clients_success_message');
+            if (msg) {
+                sessionStorage.removeItem('clients_success_message');
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Éxito',
+                    text: msg,
+                    timer: 2500,
+                    showConfirmButton: false,
+                });
+            }
+        } catch (_) {}
+    });
+
     @if (session('success'))
         Swal.fire({
             icon: 'success',

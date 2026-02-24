@@ -184,9 +184,10 @@
                             <table class="min-w-full divide-y divide-slate-100 text-[13px]">
                                 <thead class="bg-slate-50">
                                     <tr>
-                                        <th class="px-3 py-2 text-left font-semibold text-slate-500 uppercase text-[10px]">Producto</th>
                                         <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Cantidad</th>
-                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">P. unitar</th>
+                                        <th class="px-3 py-2 text-left font-semibold text-slate-500 uppercase text-[10px]">Producto</th>
+                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">P. Unitario</th>
+                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">IVA</th>
                                         <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Descuento</th>
                                         <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Total</th>
                                         <th class="px-2 py-2 text-center font-semibold text-slate-500 uppercase text-[10px]">Acc.</th>
@@ -206,8 +207,12 @@
                         <footer class="border-t border-slate-100 bg-white px-5 pt-3 pb-4 space-y-3">
                             <div class="space-y-1.5 text-[12px] text-slate-600">
                                 <div class="flex justify-between">
-                                    <span>Subtotal</span>
+                                    <span>Base imponible (sin IVA)</span>
                                     <span id="resumen-subtotal">$ 0.00</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>Subtotal (precio final)</span>
+                                    <span id="resumen-subtotal-bruto">$ 0.00</span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span>Descuento</span>
@@ -218,19 +223,9 @@
                                     <span id="resumen-impuesto">$ 0.00</span>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                    <label class="inline-flex items-center gap-2 text-[12px] text-slate-700 select-none">
-                                        <input
-                                        id="toggle_iva_global"
-                                        type="checkbox"
-                                        checked
-                                        class="rounded border-slate-300"
-                                        />
-                                        <span id="iva_label_text">Aplicar IVA (15%)</span>
-                                    </label>
-
+                                    <span class="text-[12px] text-slate-700">IVA</span>
                                     <span id="resumen-iva">$ 0.00</span>
 
-                                    <!-- ✅ hidden para mandar al backend -->
                                     <input type="hidden" id="iva_enabled" value="1">
                                 </div>
 
@@ -403,22 +398,6 @@
         console.log('[POS] AUTH_USER_ID =', window.AUTH_USER_ID);
     </script>
 
-    <script>
-    (function () {
-        const t = document.getElementById('toggle_iva_global');
-        const label = document.getElementById('iva_label_text');
-        const hidden = document.getElementById('iva_enabled');
-
-        function sync() {
-        const on = !!t?.checked;
-        if (label) label.textContent = on ? 'Aplicar IVA (15%)' : 'IVA desactivado (0%)';
-        if (hidden) hidden.value = on ? '1' : '0';
-        }
-
-        if (t) t.addEventListener('change', sync);
-        sync();
-    })();
-    </script>
     <script>
         (function () {
         const cajaInput = document.getElementById('caja_id');

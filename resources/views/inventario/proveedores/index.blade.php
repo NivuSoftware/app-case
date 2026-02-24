@@ -1,4 +1,4 @@
-<x-app-layout>
+﻿<x-app-layout>
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-2xl text-blue-900 leading-tight">
@@ -65,14 +65,14 @@
         </div>
     </div>
 
-    {{-- ✅ IMPORTANTE: ESTE INCLUDE ES EL QUE DEBE CONTENER modal-create y modal-edit --}}
+    {{-- IMPORTANTE: este include debe contener modal-create y modal-edit --}}
     @include('inventario.proveedores.modals')
 
     <script>
         const PROVEEDORES_BASE = "{{ url('inventario/proveedores') }}";
         let TODOS_PROVEEDORES = [];
 
-        // ✅ Namespace único para evitar choques con otros módulos
+        // Namespace único para evitar choques con otros módulos
         window.ProveedoresModal = {
             openCreate() {
                 const modal = document.getElementById('modal-create');
@@ -127,7 +127,7 @@
                 if (edit && !edit.classList.contains('hidden')) window.ProveedoresModal.closeEdit();
             });
 
-            // 🔍 Debug rápido: si esto imprime null, tu include NO está metiendo el modal
+            // Debug rápido: si esto imprime null, tu include no está metiendo el modal
             console.log('modal-create =>', document.getElementById('modal-create'));
             console.log('modal-edit   =>', document.getElementById('modal-edit'));
         });
@@ -217,7 +217,23 @@
             modal.classList.remove('hidden');
         }
 
+        function validarCamposObligatorios(ids) {
+            for (const id of ids) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                if (!String(el.value || '').trim()) {
+                    if (window.Swal) Swal.fire('Campos obligatorios', 'Completa todos los campos marcados con *.', 'warning');
+                    el.focus();
+                    return false;
+                }
+            }
+            return true;
+        }
+
         async function createProveedor() {
+            const requiredIds = ['c-nombre', 'c-ruc', 'c-telefono', 'c-email', 'c-direccion', 'c-contacto'];
+            if (!validarCamposObligatorios(requiredIds)) return;
+
             const payload = {
                 nombre:    document.getElementById('c-nombre').value.trim(),
                 ruc:       document.getElementById('c-ruc').value.trim(),
@@ -249,6 +265,8 @@
 
         async function updateProveedor() {
             const id = document.getElementById('e-id').value;
+            const requiredIds = ['e-nombre', 'e-ruc', 'e-telefono', 'e-email', 'e-direccion', 'e-contacto'];
+            if (!validarCamposObligatorios(requiredIds)) return;
 
             const payload = {
                 nombre:    document.getElementById('e-nombre').value.trim(),
@@ -306,3 +324,5 @@
         }
     </script>
 </x-app-layout>
+
+

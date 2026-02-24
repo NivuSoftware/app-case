@@ -191,8 +191,34 @@
         el.style.display = "none";
       }
 
+      function bindBarcodeFocusFlow() {
+        const pairs = [
+          { formId: "form-create-product", barcodeName: "codigo_barras", internalName: "codigo_interno" },
+          { formId: "form-edit", barcodeName: "codigo_barras", internalName: "codigo_interno" },
+        ];
+
+        pairs.forEach(({ formId, barcodeName, internalName }) => {
+          const form = $(formId);
+          if (!form || form.dataset.barcodeFocusBound === "1") return;
+
+          const barcodeInput = form.querySelector(`input[name="${barcodeName}"]`);
+          const internalInput = form.querySelector(`input[name="${internalName}"]`);
+          if (!barcodeInput || !internalInput) return;
+
+          form.dataset.barcodeFocusBound = "1";
+
+          barcodeInput.addEventListener("keydown", (e) => {
+            if (e.key !== "Enter" && e.key !== "Tab") return;
+            e.preventDefault();
+            internalInput.focus();
+            internalInput.select?.();
+          });
+        });
+      }
+
       document.addEventListener("DOMContentLoaded", () => {
         cargarProductos();
+        bindBarcodeFocusFlow();
         $("estado-select")?.addEventListener("change", () => {
           cargarProductos(); 
         });

@@ -1,4 +1,4 @@
-{{-- MODAL CREAR PROVEEDOR --}}
+﻿{{-- MODAL CREAR PROVEEDOR --}}
 <div id="modal-create"
      class="fixed inset-0 hidden bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
 
@@ -29,38 +29,38 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre</label>
-                <input id="c-nombre" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre *</label>
+                <input id="c-nombre" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">RUC</label>
-                <input id="c-ruc" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">RUC *</label>
+                <input id="c-ruc" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Teléfono</label>
-                <input id="c-telefono" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Teléfono *</label>
+                <input id="c-telefono" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Email</label>
-                <input id="c-email" type="email"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Email *</label>
+                <input id="c-email" type="email" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div class="md:col-span-2">
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Dirección</label>
-                <input id="c-direccion" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Dirección *</label>
+                <input id="c-direccion" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre de Contacto</label>
-                <input id="c-contacto" name="contacto" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre de Contacto *</label>
+                <input id="c-contacto" name="contacto" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
@@ -138,38 +138,38 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre</label>
-                <input id="e-nombre" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre *</label>
+                <input id="e-nombre" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">RUC</label>
-                <input id="e-ruc" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">RUC *</label>
+                <input id="e-ruc" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Teléfono</label>
-                <input id="e-telefono" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Teléfono *</label>
+                <input id="e-telefono" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Email</label>
-                <input id="e-email" type="email"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Email *</label>
+                <input id="e-email" type="email" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div class="md:col-span-2">
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Dirección</label>
-                <input id="e-direccion" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Dirección *</label>
+                <input id="e-direccion" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
             <div>
-                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre de Contacto</label>
-                <input id="e-contacto" name="contacto" type="text"
+                <label class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Nombre de Contacto *</label>
+                <input id="e-contacto" name="contacto" type="text" required
                        class="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
             </div>
 
@@ -206,3 +206,5 @@
 
     </div>
 </div>
+
+

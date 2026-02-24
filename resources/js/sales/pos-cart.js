@@ -199,35 +199,51 @@ export function initCart() {
 }
 
 /**
- * ✅ Calcular una línea en CENTAVOS (SIN IVA aquí)
- * - subtotal inteligente (cantidad/caja)
- * - descuentoCents = round(subtotal * pct/100)
- * - totalCents = subtotal - descuentoCents
+ * Calcula linea en centavos partiendo de precios FINALES (IVA incluido).
+ * Extrae base + IVA desde el total neto de la linea (despues de descuento).
  */
-function calcLine(item) {
+function calcLine(item, ivaEnabled = isIvaGlobalEnabled()) {
   const pct = clampPct(item.descuento_pct);
 
   const smart = calcSmartSubtotalCents(item);
-  const lineSubtotalCents = smart.lineSubtotalCents;
+  const lineSubtotalGrossCents = smart.lineSubtotalCents;
 
-  const descuentoCents = Math.round((lineSubtotalCents * pct) / 100);
-  const totalCents = lineSubtotalCents - descuentoCents;
+  const descuentoCents = Math.round((lineSubtotalGrossCents * pct) / 100);
+  const lineTotalWithIvaCents = lineSubtotalGrossCents - descuentoCents;
+  const ivaPct = ivaEnabled ? normalizeIvaPct(item.iva_porcentaje ?? 15) : 0;
+  const ivaBp = Math.round(ivaPct * 100); // 15% -> 1500
+  const divisor = 10000 + ivaBp;
+  const lineBaseCents =
+    divisor > 0
+      ? Math.floor((lineTotalWithIvaCents * 10000 + Math.floor(divisor / 2)) / divisor)
+      : lineTotalWithIvaCents;
+  const lineIvaCents = lineTotalWithIvaCents - lineBaseCents;
+  const qty = parseInt(item.cantidad, 10) || 1;
+  const unitBaseCents = qty > 0 ? Math.round(lineBaseCents / qty) : lineBaseCents;
+  const unitIvaCents = qty > 0 ? Math.round(lineIvaCents / qty) : lineIvaCents;
 
   return {
-    // guardamos también en cents para totales exactos
-    lineSubtotalCents,
+    // guardamos tambien en cents para totales exactos
+    lineSubtotalCents: lineSubtotalGrossCents,
     descuentoCents,
-    totalCents,
+    totalCents: lineTotalWithIvaCents,
+    lineBaseCents,
+    lineIvaCents,
+    iva_pct_aplicado: ivaPct,
 
-    // info de pricing para UI
+    // info de pricing para UI (precio final)
     precio_unitario_aplicado: fromCents(smart.appliedUnitCents),
+    precio_unitario_base_aplicado: fromCents(unitBaseCents),
+    iva_unitario_aplicado: fromCents(unitIvaCents),
     pricing_label: smart.pricingLabel,
 
     // y en $ para render
-    lineSubtotal: fromCents(lineSubtotalCents),
+    lineSubtotal: fromCents(lineSubtotalGrossCents),
     descuento_pct: pct,
     descuento: fromCents(descuentoCents),
-    total: fromCents(totalCents),
+    lineBase: fromCents(lineBaseCents),
+    lineIva: fromCents(lineIvaCents),
+    total: fromCents(lineTotalWithIvaCents),
   };
 }
 
@@ -379,38 +395,36 @@ function setItemDiscountPercent(index, pct) {
 }
 
 /**
- * ✅ Totales exactos:
- * - subtotal = suma lineSubtotalCents
- * - descuento = suma descuentoCents
- * - iva = suma round(totalCents * 0/15 /100) por línea
+ * Totales exactos:
+ * - subtotal_bruto = suma de linea con precio final (antes de descuento)
+ * - base_imponible = suma de bases sin IVA por linea
+ * - iva = suma de IVA extraido por linea
  */
 export function getTotals() {
-  let subtotalCents = 0;
+  let subtotalGrossCents = 0;
   let descuentoCents = 0;
   let impuestoCents = 0;
-
+  let baseImponibleCents = 0;
   let ivaCents = 0;
   const ivaEnabled = isIvaGlobalEnabled();
 
   cart.forEach((item) => {
     // siempre recalculamos por seguridad
-    const computed = calcLine(item);
+    const computed = calcLine(item, ivaEnabled);
     Object.assign(item, computed);
 
-    subtotalCents += item.lineSubtotalCents || 0;
+    subtotalGrossCents += item.lineSubtotalCents || 0;
     descuentoCents += item.descuentoCents || 0;
-
-    if (ivaEnabled) {
-      const pct = normalizeIvaPct(item.iva_porcentaje ?? 15);
-      ivaCents += Math.round(((item.totalCents || 0) * pct) / 100);
-    }
+    baseImponibleCents += item.lineBaseCents || 0;
+    ivaCents += item.lineIvaCents || 0;
   });
 
-  const baseImponibleCents = subtotalCents - descuentoCents;
   const totalCents = baseImponibleCents + impuestoCents + ivaCents;
 
   return {
-    subtotal: fromCents(subtotalCents),
+    subtotal: fromCents(baseImponibleCents),
+    subtotal_bruto: fromCents(subtotalGrossCents),
+    base_imponible: fromCents(baseImponibleCents),
     descuento: fromCents(descuentoCents),
     impuesto: fromCents(impuestoCents),
     iva: fromCents(ivaCents),
@@ -419,15 +433,17 @@ export function getTotals() {
 }
 
 function recalcSummary() {
-  const { subtotal, descuento, impuesto, iva, total } = getTotals();
+  const { subtotal, subtotal_bruto, descuento, impuesto, iva, total } = getTotals();
 
   const subEl = document.getElementById('resumen-subtotal');
+  const subBrutoEl = document.getElementById('resumen-subtotal-bruto');
   const descEl = document.getElementById('resumen-descuento');
   const impEl = document.getElementById('resumen-impuesto');
   const ivaEl = document.getElementById('resumen-iva');
   const totEl = document.getElementById('resumen-total');
 
   if (subEl) subEl.textContent = formatMoney(subtotal);
+  if (subBrutoEl) subBrutoEl.textContent = formatMoney(subtotal_bruto);
   if (descEl) descEl.textContent = formatMoney(descuento);
   if (impEl) impEl.textContent = formatMoney(impuesto);
   if (ivaEl) ivaEl.textContent = formatMoney(iva);
@@ -461,6 +477,9 @@ function renderCart() {
   const ivaEnabled = isIvaGlobalEnabled();
 
   cart.forEach((item, index) => {
+    const computed = calcLine(item, ivaEnabled);
+    Object.assign(item, computed);
+
     const tr = document.createElement('tr');
 
     const pricingLabel = item.pricing_label ? String(item.pricing_label) : '';
@@ -474,13 +493,6 @@ function renderCart() {
     const ivaTxt = ivaEnabled ? normalizeIvaPct(item.iva_porcentaje ?? 15) : 0;
 
     tr.innerHTML = `
-      <td class="px-3 py-2 text-xs text-gray-700">
-        <div class="font-semibold text-gray-800">${item.descripcion}</div>
-        <div class="text-[10px] text-gray-400">
-          ID: ${item.producto_id} · IVA: ${ivaTxt}%
-        </div>
-      </td>
-
       <td class="px-3 py-2 text-right text-xs text-gray-700">
         <div class="inline-flex items-center gap-1">
           <button type="button" class="px-1 text-xs text-slate-500 hover:text-slate-800" data-cart-minus data-index="${index}">-</button>
@@ -489,8 +501,19 @@ function renderCart() {
         </div>
       </td>
 
+      <td class="px-3 py-2 text-xs text-gray-700">
+        <div class="font-semibold text-gray-800">${item.descripcion}</div>
+        <div class="text-[10px] text-gray-400">
+          ID: ${item.producto_id} · IVA: ${ivaTxt}%
+        </div>
+      </td>
+
       <td class="px-3 py-2 text-right text-xs text-gray-700">
-        ${formatMoney(item.precio_unitario_aplicado || item.precio_unitario)}
+        ${formatMoney(item.precio_unitario_base_aplicado || 0)}
+      </td>
+
+      <td class="px-3 py-2 text-right text-xs text-gray-700">
+        ${formatMoney(item.lineIva || 0)}
       </td>
 
       <td class="px-3 py-2 text-right text-xs text-gray-700">

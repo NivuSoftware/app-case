@@ -91,7 +91,8 @@
     foreach ($items as $it) {
         $base = round((float)($it->total ?? 0), 2);
         $pct  = round((float)($it->iva_porcentaje ?? 0), 2);
-        $desc = round((float)($it->descuento ?? 0), 2);
+        $descGross = round((float)($it->descuento ?? 0), 2);
+        $desc = $pct > 0 ? round($descGross / (1 + ($pct / 100)), 2) : $descGross;
 
         $subtotalSinImpuestos += $base;
         $descuentoTotal += $desc;
@@ -293,8 +294,15 @@
         @foreach($items as $it)
             @php
                 $cant = number_format((float)$it->cantidad, 2, '.', '');
-                $pu   = number_format((float)$it->precio_unitario, 2, '.', '');
-                $desc = number_format((float)($it->descuento ?? 0), 2, '.', '');
+                $qtyRaw = (float)($it->cantidad ?? 0);
+                $qtySafe = $qtyRaw > 0 ? $qtyRaw : 1.0;
+                $base = round((float)($it->total ?? 0), 2);
+                $pct = round((float)($it->iva_porcentaje ?? 0), 2);
+                $descGross = round((float)($it->descuento ?? 0), 2);
+                $descBase = $pct > 0 ? round($descGross / (1 + ($pct / 100)), 2) : $descGross;
+                $subtotalLineaBase = round($base + $descBase, 2);
+                $pu   = number_format($subtotalLineaBase / $qtySafe, 2, '.', '');
+                $desc = number_format($descBase, 2, '.', '');
                 $totalLinea = number_format((float)$it->total, 2, '.', '');
             @endphp
             <tr>

@@ -80,11 +80,23 @@ class ClientService
             $emails = $data['emails'] ?? [];
             unset($data['emails']);
 
+            $emails = array_values(array_filter(array_map(
+                static fn($email) => trim((string) $email),
+                is_array($emails) ? $emails : []
+            )));
+
+            if (empty($emails)) {
+                $defaultMail = trim((string) env('DEFAULT_MAIL', 'sincorreo@gmail.com'));
+                if ($defaultMail !== '') {
+                    $emails = [$defaultMail];
+                }
+            }
+
             // Crear cliente
             $client = $this->repository->create($data);
 
-            // Crear correos si vienen
-            if (!empty($emails) && is_array($emails)) {
+            // Crear correos (usuario o default)
+            if (!empty($emails)) {
                 $this->repository->syncEmails($client, $emails);
             }
 

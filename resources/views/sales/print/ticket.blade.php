@@ -100,8 +100,9 @@
     <table>
       <thead>
         <tr>
+          <th class="left">Cant</th>
           <th>Producto</th>
-          <th class="right">Cant</th>
+          <th class="right">P. Unitario</th>
           <th class="right">Total</th>
         </tr>
       </thead>
@@ -109,30 +110,31 @@
         @foreach($sale->items as $it)
           @php
             $ivaPctItem = $it->iva_porcentaje ?? null;
-            $ivaPctProd = $it->product->iva_porcentaje ?? null;
+            $ivaPctProd = $it->producto?->iva_porcentaje ?? null;
             $ivaPct     = is_numeric($ivaPctItem) ? (float)$ivaPctItem : (is_numeric($ivaPctProd) ? (float)$ivaPctProd : 0);
             $gravaIva   = $ivaPct > 0;
+            $baseLinea  = round((float)($it->total ?? 0), 2);
+            $ivaLinea   = round($baseLinea * ($ivaPct / 100), 2);
+            $totalLinea = round($baseLinea + $ivaLinea, 2);
+            $qtyLinea   = max(1, (float)($it->cantidad ?? 1));
+            $puBase     = round($baseLinea / $qtyLinea, 2);
           @endphp
           <tr>
+            <td class="center">{{ $it->cantidad }}</td>
             <td>
               {{ $it->descripcion }}@if($gravaIva) * @endif
               <div class="small muted">
-                ${{ number_format($it->precio_unitario, 2) }}
                 @if(($it->descuento ?? 0) > 0)
-                  - Desc ${{ number_format($it->descuento, 2) }}
+                  Desc ${{ number_format($it->descuento, 2) }}
                 @endif
               </div>
             </td>
-            <td class="right">{{ $it->cantidad }}</td>
-            <td class="right">${{ number_format($it->total, 2) }}</td>
+            <td class="right">${{ number_format($puBase, 2) }}</td>
+            <td class="right">${{ number_format($totalLinea, 2) }}</td>
           </tr>
         @endforeach
       </tbody>
     </table>
-
-    <div class="small muted" style="margin-top:6px;">
-      *
-    </div>
 
     <div class="hr"></div>
 
