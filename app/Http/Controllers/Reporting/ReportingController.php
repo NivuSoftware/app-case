@@ -28,6 +28,11 @@ class ReportingController extends Controller
         ]);
     }
 
+    public function downloadFilteredInvoiceXmlZip(Request $request)
+    {
+        return $this->reporting->downloadFilteredInvoiceXmlZip($request);
+    }
+
     public function dailySalesByPaymentMethod(Request $request)
     {
         $payload = $this->reporting->getDailySalesByPaymentMethod($request);
@@ -40,6 +45,13 @@ class ReportingController extends Controller
         return $this->reporting->exportDailySalesByPaymentMethod($request);
     }
 
+    public function printDailySalesByPaymentMethod(Request $request)
+    {
+        $payload = $this->reporting->getDailySalesByPaymentMethod($request);
+
+        return view('reporting.sales.daily-by-payment-print', $payload);
+    }
+
     public function cashClosuresDaily(Request $request)
     {
         $payload = $this->reporting->getCashClosuresDaily($request);
@@ -50,6 +62,20 @@ class ReportingController extends Controller
     public function exportCashClosuresDaily(Request $request)
     {
         return $this->reporting->exportCashClosuresDaily($request);
+    }
+
+    public function cashClosureDetail(int $id)
+    {
+        $payload = $this->reporting->getCashClosureDetail($id);
+
+        return view('reporting.cashier.closure-detail', $payload);
+    }
+
+    public function printCashClosureDetail(int $id)
+    {
+        $payload = $this->reporting->getCashClosureDetail($id);
+
+        return view('reporting.cashier.closure-detail-print', $payload);
     }
 
     public function monthlySalesReport(Request $request)

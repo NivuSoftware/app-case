@@ -20,7 +20,7 @@
 
              <button type="button"
                     onclick="ProveedoresModal.closeCreate()"
-                    class="text-gray-400 hover:text-gray-600 transition">
+                    class="text-3xl leading-none text-gray-400 hover:text-gray-600 transition">
                 ✕
             </button>
         </div>
@@ -127,7 +127,7 @@
 
             <button type="button"
                     onclick="ProveedoresModal.closeEdit()"
-                    class="text-gray-400 hover:text-gray-600 transition">
+                    class="text-3xl leading-none text-gray-400 hover:text-gray-600 transition">
                 ✕
             </button>
         </div>

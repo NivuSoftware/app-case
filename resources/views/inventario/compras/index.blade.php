@@ -201,6 +201,13 @@
 
             let filtradas = [...TODAS_COMPRAS];
 
+            const fechaSolo = (v) => {
+                if (!v) return '';
+                const s = String(v);
+                // Soporta 'YYYY-MM-DD' y timestamps tipo ISO 'YYYY-MM-DDTHH:mm:ss...'
+                return s.length >= 10 ? s.slice(0, 10) : s;
+            };
+
             if (qProv) {
                 filtradas = filtradas.filter(p =>
                     (p.supplier?.nombre || '').toLowerCase().includes(qProv)
@@ -208,11 +215,17 @@
             }
 
             if (desde) {
-                filtradas = filtradas.filter(p => !p.fecha_compra || p.fecha_compra >= desde);
+                filtradas = filtradas.filter(p => {
+                    const f = fechaSolo(p.fecha_compra);
+                    return !f || f >= desde;
+                });
             }
 
             if (hasta) {
-                filtradas = filtradas.filter(p => !p.fecha_compra || p.fecha_compra <= hasta);
+                filtradas = filtradas.filter(p => {
+                    const f = fechaSolo(p.fecha_compra);
+                    return !f || f <= hasta; // inclusivo: incluye exactamente la fecha "hasta"
+                });
             }
 
             renderCompras(filtradas);

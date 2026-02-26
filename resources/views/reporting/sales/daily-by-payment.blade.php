@@ -61,6 +61,11 @@
                             class="text-xs px-3 py-1 rounded bg-blue-100 text-blue-800 hover:bg-blue-200 text-center whitespace-nowrap shrink-0">
                             Exportar Excel
                         </a>
+                        <a href="{{ route('reporteria.sales.daily.by-payment.print', $exportParams) }}"
+                            target="_blank"
+                            class="text-xs px-3 py-1 rounded bg-slate-700 text-white hover:bg-slate-800 text-center whitespace-nowrap shrink-0">
+                            Imprimir
+                        </a>
                     </div>
                 </div>
             </div>

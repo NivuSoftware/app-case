@@ -17,6 +17,8 @@ Route::middleware(['auth', 'role:admin'])
 
         Route::get('/estados-facturas', [ReportingController::class, 'invoiceStatuses'])
             ->name('reporteria.invoices.statuses');
+        Route::get('/estados-facturas/xml-zip', [ReportingController::class, 'downloadFilteredInvoiceXmlZip'])
+            ->name('reporteria.invoices.statuses.xml-zip');
 
         Route::get('/ventas-diarias-forma-pago', [ReportingController::class, 'dailySalesByPaymentMethod'])
             ->name('reporteria.sales.daily.by-payment');
@@ -24,11 +26,22 @@ Route::middleware(['auth', 'role:admin'])
         Route::get('/ventas-diarias-forma-pago/export', [ReportingController::class, 'exportDailySalesByPaymentMethod'])
             ->name('reporteria.sales.daily.by-payment.export');
 
+        Route::get('/ventas-diarias-forma-pago/print', [ReportingController::class, 'printDailySalesByPaymentMethod'])
+            ->name('reporteria.sales.daily.by-payment.print');
+
         Route::get('/cierres-caja-diarios', [ReportingController::class, 'cashClosuresDaily'])
             ->name('reporteria.cashier.closures.daily');
 
         Route::get('/cierres-caja-diarios/export', [ReportingController::class, 'exportCashClosuresDaily'])
             ->name('reporteria.cashier.closures.daily.export');
+
+        Route::get('/cierres-caja-diarios/{id}/detalle', [ReportingController::class, 'cashClosureDetail'])
+            ->whereNumber('id')
+            ->name('reporteria.cashier.closures.detail');
+
+        Route::get('/cierres-caja-diarios/{id}/detalle/print', [ReportingController::class, 'printCashClosureDetail'])
+            ->whereNumber('id')
+            ->name('reporteria.cashier.closures.detail.print');
 
         Route::get('/ventas-mensuales', [ReportingController::class, 'monthlySalesReport'])
             ->name('reporteria.sales.monthly');

@@ -2,13 +2,16 @@
 
 namespace App\Services\Reporting;
 
+use App\Models\Cashier\CashSession;
 use App\Models\Sri\ElectronicInvoice;
 use App\Repositories\Reporting\ReportingRepository;
 use App\Services\Store\BodegaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
+use ZipArchive;
 
 class ReportingService
 {
@@ -65,6 +68,71 @@ class ReportingService
         });
 
         return [$invoices, $estado, $q];
+    }
+
+    public function downloadFilteredInvoiceXmlZip(Request $request): Response
+    {
+        $estado = strtoupper(trim((string) $request->query('estado', '')));
+        $q = trim((string) $request->query('q', ''));
+        $maxReviewHours = (int) config('sri.max_review_hours', 72);
+
+        $invoices = $this->reporting->getInvoiceStatusesAll($estado, $q, $maxReviewHours);
+
+        if ($invoices->isEmpty()) {
+            abort(404, 'No hay facturas para los filtros seleccionados.');
+        }
+
+        $tmpBase = storage_path('app/tmp');
+        if (!is_dir($tmpBase)) {
+            mkdir($tmpBase, 0775, true);
+        }
+
+        $tmpZip = tempnam($tmpBase, 'xml_facturas_');
+        if ($tmpZip === false) {
+            abort(500, 'No se pudo crear archivo temporal para el ZIP.');
+        }
+
+        $zipPath = $tmpZip . '.zip';
+        @rename($tmpZip, $zipPath);
+
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            @unlink($zipPath);
+            abort(500, 'No se pudo crear el ZIP de XML.');
+        }
+
+        $agregados = 0;
+        foreach ($invoices as $inv) {
+            $path = (string) ($inv->xml_autorizado_path ?: $inv->xml_firmado_path ?: $inv->xml_generado_path ?: '');
+            if ($path === '' || !Storage::disk('local')->exists($path)) {
+                continue;
+            }
+
+            $content = Storage::disk('local')->get($path);
+            $numFactura = trim((string) optional($inv->sale)->num_factura);
+            $baseName = $numFactura !== '' ? $numFactura : ((string) ($inv->clave_acceso ?: ('invoice_' . $inv->id)));
+            $safeBase = preg_replace('/[^A-Za-z0-9._-]/', '_', $baseName) ?: ('invoice_' . $inv->id);
+            $entryName = $safeBase . '.xml';
+
+            if ($zip->locateName($entryName) !== false) {
+                $entryName = $safeBase . '_' . $inv->id . '.xml';
+            }
+
+            $zip->addFromString($entryName, $content);
+            $agregados++;
+        }
+
+        $zip->close();
+
+        if ($agregados === 0) {
+            @unlink($zipPath);
+            abort(404, 'No se encontraron archivos XML para las facturas filtradas.');
+        }
+
+        $stamp = now()->format('Ymd_His');
+        $filename = "facturas_xml_filtradas_{$stamp}.zip";
+
+        return response()->download($zipPath, $filename)->deleteFileAfterSend(true);
     }
 
     public function getDailySalesByPaymentMethod(Request $request): array
@@ -305,6 +373,39 @@ class ReportingService
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
         ]);
+    }
+
+    public function getCashClosureDetail(int $id): array
+    {
+        $session = CashSession::with(['movements.creator', 'opener', 'closer'])->findOrFail($id);
+
+        $openedAt = $session->opened_at;
+        $closedAt = $session->closed_at;
+        $durationText = 'N/D';
+
+        if ($openedAt && $closedAt) {
+            $minutes = (int) $openedAt->diffInMinutes($closedAt);
+            $hours = intdiv($minutes, 60);
+            $mins = $minutes % 60;
+            $durationText = sprintf('%dh %02dm', $hours, $mins);
+        }
+
+        $result = strtoupper((string) ($session->result ?? ''));
+        $resultLabel = $result === 'MATCH'
+            ? 'CUADRA'
+            : ($result === 'SHORT'
+                ? 'FALTANTE'
+                : ($result === 'OVER'
+                    ? 'SOBRANTE'
+                    : ($result !== '' ? $result : 'N/D')
+                )
+            );
+
+        return [
+            'session' => $session,
+            'durationText' => $durationText,
+            'resultLabel' => $resultLabel,
+        ];
     }
 
     private function buildCashClosuresDailyExcelHtml(array $payload): string
@@ -702,9 +803,13 @@ class ReportingService
     public function exportTopProductsReport(Request $request): Response
     {
         $payload = $this->getTopProductsReport($request);
-
         $desde = (string) ($payload['desde'] ?? '');
         $hasta = (string) ($payload['hasta'] ?? '');
+
+        $from = Carbon::parse($desde)->startOfDay();
+        $to = Carbon::parse($hasta)->endOfDay();
+        $payload['rows'] = $this->reporting->getTopProductsByQty($from, $to, null);
+
         $filename = "top_productos_{$desde}_{$hasta}.xls";
 
         $html = $this->buildTopProductsExcelHtml($payload);
@@ -811,7 +916,12 @@ class ReportingService
         $categoria = (string) ($payload['categoria'] ?? '');
         $q = (string) ($payload['q'] ?? '');
 
-        $rows = $payload['rows']?->getCollection() ?? collect();
+        $filters = [
+            'bodega_id' => $bodegaId,
+            'categoria' => $categoria,
+            'q' => $q,
+        ];
+        $rows = $this->reporting->getInventoryReportAll($filters);
 
         $filename = 'inventario_productos.xls';
         if ($bodegaId) {

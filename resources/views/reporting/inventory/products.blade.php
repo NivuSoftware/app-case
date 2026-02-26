@@ -86,6 +86,7 @@
                         <thead class="bg-blue-50">
                             <tr>
                                 <th class="px-4 py-3 text-left font-semibold text-blue-900">Producto</th>
+                                <th class="px-4 py-3 text-left font-semibold text-blue-900">Codigo interno</th>
                                 <th class="px-4 py-3 text-left font-semibold text-blue-900">Categoria</th>
                                 <th class="px-4 py-3 text-left font-semibold text-blue-900">Bodega</th>
                                 <th class="px-4 py-3 text-right font-semibold text-blue-900">Stock actual</th>
@@ -102,6 +103,7 @@
                                 @endphp
                                 <tr class="{{ $rowClass }}">
                                     <td class="px-4 py-3 text-blue-900">{{ $row->producto_nombre ?? 'N/D' }}</td>
+                                    <td class="px-4 py-3 text-blue-900">{{ $row->codigo_interno ?? 'N/D' }}</td>
                                     <td class="px-4 py-3 text-blue-900">{{ $row->categoria ?? 'N/D' }}</td>
                                     <td class="px-4 py-3 text-blue-900">{{ $row->bodega_nombre ?? 'N/D' }}</td>
                                     <td class="px-4 py-3 text-right text-blue-900">{{ (int) ($row->stock_actual ?? 0) }}</td>
@@ -118,7 +120,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td class="px-4 py-6 text-center text-blue-700" colspan="6">
+                                    <td class="px-4 py-6 text-center text-blue-700" colspan="7">
                                         No hay productos para los filtros seleccionados.
                                     </td>
                                 </tr>

@@ -11,10 +11,23 @@ use App\Models\Product\Product;
 use Illuminate\Support\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Builder;
 
 class ReportingRepository
 {
     public function getInvoiceStatuses(string $estado, string $q, int $maxReviewHours): LengthAwarePaginator
+    {
+        return $this->buildInvoiceStatusesQuery($estado, $q, $maxReviewHours)
+            ->paginate(50)
+            ->withQueryString();
+    }
+
+    public function getInvoiceStatusesAll(string $estado, string $q, int $maxReviewHours): Collection
+    {
+        return $this->buildInvoiceStatusesQuery($estado, $q, $maxReviewHours)->get();
+    }
+
+    private function buildInvoiceStatusesQuery(string $estado, string $q, int $maxReviewHours): Builder
     {
         $query = ElectronicInvoice::with('sale')
             ->orderByDesc('updated_at');
@@ -38,7 +51,7 @@ class ReportingRepository
             });
         }
 
-        return $query->paginate(50)->withQueryString();
+        return $query;
     }
 
     public function getDailySalesByPaymentMethod(string $fechaStr, ?int $bodegaId): Collection
@@ -201,9 +214,9 @@ class ReportingRepository
             ->paginate($perPage, ['*'], 'range_page');
     }
 
-    public function getTopProductsByQty(Carbon $from, Carbon $to, int $limit = 5): Collection
+    public function getTopProductsByQty(Carbon $from, Carbon $to, ?int $limit = 5): Collection
     {
-        return Sale::query()
+        $query = Sale::query()
             ->join('sale_items as si', 'si.sale_id', '=', 'sales.id')
             ->join('products as p', 'p.id', '=', 'si.producto_id')
             ->whereBetween('sales.fecha_venta', [$from, $to])
@@ -213,9 +226,13 @@ class ReportingRepository
             ->selectRaw('SUM(si.cantidad) as cantidad')
             ->selectRaw('SUM(si.total) as total')
             ->groupByRaw('p.id, p.nombre')
-            ->orderByRaw('SUM(si.cantidad) DESC')
-            ->limit($limit)
-            ->get();
+            ->orderByRaw('SUM(si.cantidad) DESC');
+
+        if (!is_null($limit) && $limit > 0) {
+            $query->limit($limit);
+        }
+
+        return $query->get();
     }
 
     public function getInventoryReport(array $filters, int $perPage = 50)
@@ -223,6 +240,13 @@ class ReportingRepository
         $query = $this->buildInventoryQuery($filters);
 
         return $query->paginate($perPage)->withQueryString();
+    }
+
+    public function getInventoryReportAll(array $filters): Collection
+    {
+        $query = $this->buildInventoryQuery($filters);
+
+        return $query->get();
     }
 
     public function getInventoryChartData(array $filters, int $limit = 10): Collection
@@ -254,13 +278,14 @@ class ReportingRepository
             ->join('bodegas as b', 'b.id', '=', 'inventario.bodega_id')
             ->selectRaw('p.id as producto_id')
             ->selectRaw('p.nombre as producto_nombre')
+            ->selectRaw('p.codigo_interno as codigo_interno')
             ->selectRaw('p.categoria as categoria')
             ->selectRaw('p.stock_minimo as stock_minimo')
             ->selectRaw('b.id as bodega_id')
             ->selectRaw('b.nombre as bodega_nombre')
             ->selectRaw('SUM(inventario.stock_actual) as stock_actual')
             ->selectRaw('SUM(inventario.stock_reservado) as stock_reservado')
-            ->groupByRaw('p.id, p.nombre, p.categoria, p.stock_minimo, b.id, b.nombre');
+            ->groupByRaw('p.id, p.nombre, p.codigo_interno, p.categoria, p.stock_minimo, b.id, b.nombre');
 
         if ($bodegaId > 0) {
             $query->where('inventario.bodega_id', $bodegaId);

@@ -70,6 +70,7 @@ class PurchaseController extends Controller
             'items.*.percha_id'      => 'nullable|exists:perchas,id',
             'items.*.cantidad'       => 'required|integer|min:1',
             'items.*.costo_unitario' => 'required|numeric|min:0',
+            'items.*.grava_iva'      => 'nullable|boolean',
         ]);
 
         // Si viene "descripcion" y NO viene "observaciones",

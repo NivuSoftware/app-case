@@ -65,6 +65,7 @@
                                 <th class="px-4 py-3 text-left font-semibold text-blue-900">Resultado</th>
                                 <th class="px-4 py-3 text-left font-semibold text-blue-900">Formas de pago</th>
                                 <th class="px-4 py-3 text-left font-semibold text-blue-900">Notas</th>
+                                <th class="px-4 py-3 text-center font-semibold text-blue-900">Detalle</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-blue-100">
@@ -111,6 +112,14 @@
                                     </td>
                                     <td class="px-4 py-3 text-xs text-blue-900">
                                         {{ $s->notes ? $s->notes : '-' }}
+                                    </td>
+                                    <td class="px-4 py-3 text-center">
+                                        <a href="{{ route('reporteria.cashier.closures.detail', ['id' => $s->id]) }}"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           class="inline-flex items-center px-2 py-1 rounded-md bg-blue-600 text-white text-xs hover:bg-blue-700">
+                                            Ver detalle
+                                        </a>
                                     </td>
                                 </tr>
                             @empty

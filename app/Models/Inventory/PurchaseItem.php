@@ -22,12 +22,14 @@ class PurchaseItem extends Model
         'cantidad',
         'costo_unitario',
         'subtotal',
+        'grava_iva',
     ];
 
     protected $casts = [
         'cantidad'       => 'integer',
         'costo_unitario' => 'decimal:4',
         'subtotal'       => 'decimal:2',
+        'grava_iva'      => 'boolean',
     ];
 
     /* ==========================

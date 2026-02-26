@@ -167,6 +167,7 @@
                             onkeydown="handleCostoUnitarioEnter(event)"
                             class="border rounded w-full px-2 py-1 text-xs" />
                     </div>
+
                 </div>
 
                 {{-- TABLA DE ÍTEMS --}}
@@ -179,6 +180,7 @@
                                 <th class="px-2 py-2 text-left w-1/6">Percha</th>
                                 <th class="px-2 py-2 text-right w-20">Cant.</th>
                                 <th class="px-2 py-2 text-right w-24">Costo unit.</th>
+                                <th class="px-2 py-2 text-center w-20">IVA 15%</th>
                                 <th class="px-2 py-2 text-right w-24">Subtotal</th>
                                 <th class="px-2 py-2 text-center w-16">Acciones</th>
                             </tr>
@@ -197,7 +199,7 @@
                             <span id="lbl-subtotal" class="font-medium">$ 0.00</span>
                         </div>
                         <div class="flex justify-between">
-                            <span>IVA (15%):</span>
+                            <span id="lbl-iva-title">IVA (15%):</span>
                             <span id="lbl-iva">$ 0.00</span>
                         </div>
                         <div class="flex justify-between text-base font-semibold">
@@ -283,7 +285,8 @@
                 percha_codigo: per ? per.codigo : '',
                 cantidad: cantidad,
                 costo_unitario: costo,
-                subtotal: cantidad * costo
+                subtotal: cantidad * costo,
+                grava_iva: true,
             };
 
             ITEMS.push(item);
@@ -498,6 +501,12 @@
                                onchange="updateItem(${idx}, 'costo_unitario', this.value)"
                                class="border rounded w-full px-1 py-1 text-xs text-right">
                     </td>
+                    <td class="px-2 py-2 text-center">
+                        <input type="checkbox"
+                               ${it.grava_iva ? 'checked' : ''}
+                               onchange="updateItem(${idx}, 'grava_iva', this.checked ? 1 : 0)"
+                               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    </td>
                     <td class="px-2 py-2 text-right font-semibold">
                         ${formatter.format(it.subtotal)}
                     </td>
@@ -540,6 +549,9 @@
             else if (field === 'costo_unitario') {
                 item.costo_unitario = parseFloat(value) || 0;
             }
+            else if (field === 'grava_iva') {
+                item.grava_iva = value === true || value === 1 || value === '1';
+            }
 
             // Recalcular subtotal
             item.subtotal = item.cantidad * item.costo_unitario;
@@ -555,17 +567,22 @@
 
         function recalcularTotales() {
             const subtotal = ITEMS.reduce((acc, it) => acc + it.subtotal, 0);
-            const iva = subtotal * IVA_RATE;
+            const iva = ITEMS.reduce((acc, it) => {
+                return acc + ((it.grava_iva ? it.subtotal : 0) * IVA_RATE);
+            }, 0);
             const total = subtotal + iva;
+            const hayItemsConIva = ITEMS.some(it => !!it.grava_iva);
 
             const lblSubtotal = document.getElementById('lbl-subtotal');
             const lblIva = document.getElementById('lbl-iva');
+            const lblIvaTitle = document.getElementById('lbl-iva-title');
             const lblTotal = document.getElementById('lbl-total');
             const lblMontoPagado = document.getElementById('lbl-monto-pagado');
             const inputMonto = document.getElementById('monto_pagado');
 
             if (lblSubtotal) lblSubtotal.textContent = formatter.format(subtotal);
             if (lblIva) lblIva.textContent = formatter.format(iva);
+            if (lblIvaTitle) lblIvaTitle.textContent = hayItemsConIva ? 'IVA (15%):' : 'IVA (0%):';
             if (lblTotal) lblTotal.textContent = formatter.format(total);
             if (lblMontoPagado) lblMontoPagado.textContent = formatter.format(total);
 
@@ -624,7 +641,8 @@
                     bodega_id: it.bodega_id,
                     percha_id: it.percha_id,
                     cantidad: it.cantidad,
-                    costo_unitario: it.costo_unitario
+                    costo_unitario: it.costo_unitario,
+                    grava_iva: !!it.grava_iva,
                 }))
             };
 

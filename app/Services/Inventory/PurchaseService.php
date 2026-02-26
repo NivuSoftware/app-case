@@ -49,14 +49,15 @@ class PurchaseService
 
         $ivaPorcentaje = isset($data['iva_porcentaje'])
             ? (float) $data['iva_porcentaje']
-            : 0.12; // 12% por defecto
+            : 0.15; // 15% por defecto
 
         return DB::transaction(function () use ($data, $ivaPorcentaje) {
 
-            $subtotalGlobal = 0;
+            $subtotalGlobal = 0.0;
+            $ivaGlobal = 0.0;
 
             // ---- Procesar ítems y calcular subtotal global ----
-            $items = array_map(function ($item) use (&$subtotalGlobal) {
+            $items = array_map(function ($item) use (&$subtotalGlobal, &$ivaGlobal, $ivaPorcentaje) {
                 if (
                     empty($item['producto_id']) ||
                     empty($item['bodega_id'])   ||
@@ -71,8 +72,10 @@ class PurchaseService
                 $cantidad      = (int) $item['cantidad'];
                 $costoUnitario = (float) $item['costo_unitario'];
                 $subtotal      = $cantidad * $costoUnitario;
+                $gravaIva = array_key_exists('grava_iva', $item) ? (bool) $item['grava_iva'] : true;
 
                 $subtotalGlobal += $subtotal;
+                $ivaGlobal += $gravaIva ? round($subtotal * $ivaPorcentaje, 2) : 0.0;
 
                 return [
                     'producto_id'    => $item['producto_id'],
@@ -81,11 +84,12 @@ class PurchaseService
                     'cantidad'       => $cantidad,
                     'costo_unitario' => $costoUnitario,
                     'subtotal'       => $subtotal,
+                    'grava_iva'      => $gravaIva,
                 ];
             }, $data['items'] ?? []);
 
             // ==== TOTALES ====
-            $iva   = round($subtotalGlobal * $ivaPorcentaje, 2);
+            $iva   = round($ivaGlobal, 2);
             $total = round($subtotalGlobal + $iva, 2);
 
             // En tu escenario "se paga todo", este pago_inicial normalmente será = total
