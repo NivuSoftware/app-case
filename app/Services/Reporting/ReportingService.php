@@ -72,6 +72,8 @@ class ReportingService
 
     public function downloadFilteredInvoiceXmlZip(Request $request): Response
     {
+        $disk = (string) config('sri.documents_disk', 'local');
+
         $estado = strtoupper(trim((string) $request->query('estado', '')));
         $q = trim((string) $request->query('q', ''));
         $maxReviewHours = (int) config('sri.max_review_hours', 72);
@@ -104,11 +106,11 @@ class ReportingService
         $agregados = 0;
         foreach ($invoices as $inv) {
             $path = (string) ($inv->xml_autorizado_path ?: $inv->xml_firmado_path ?: $inv->xml_generado_path ?: '');
-            if ($path === '' || !Storage::disk('local')->exists($path)) {
+            if ($path === '' || !Storage::disk($disk)->exists($path)) {
                 continue;
             }
 
-            $content = Storage::disk('local')->get($path);
+            $content = Storage::disk($disk)->get($path);
             $numFactura = trim((string) optional($inv->sale)->num_factura);
             $baseName = $numFactura !== '' ? $numFactura : ((string) ($inv->clave_acceso ?: ('invoice_' . $inv->id)));
             $safeBase = preg_replace('/[^A-Za-z0-9._-]/', '_', $baseName) ?: ('invoice_' . $inv->id);

@@ -24,6 +24,12 @@ class SriInvoiceService
         private ElectronicInvoiceRepository $repo
     ) {
     }
+
+    private function documentsDisk(): string
+    {
+        return (string) config('sri.documents_disk', 'local');
+    }
+
     public function isProductionEnv(): bool
     {
         $cfg = $this->configService->get();
@@ -118,11 +124,8 @@ class SriInvoiceService
             $this->maybeValidateFacturaXsd($xmlString, 'generated');
 
 
-            $dir = "sri/xml/generados";
-            Storage::disk('local')->makeDirectory($dir);
-
-            $xmlPath = "{$dir}/{$claveAcceso}.xml";
-            Storage::disk('local')->put($xmlPath, $xmlString);
+            $xmlPath = "sri/xml/generados/{$claveAcceso}.xml";
+            Storage::disk($this->documentsDisk())->put($xmlPath, $xmlString);
 
             $invoice = $this->repo->create([
                 'sale_id' => $sale->id,
@@ -164,7 +167,7 @@ class SriInvoiceService
 
             if (!$skipReception) {
                 $signedPath = $invoice->xml_firmado_path ?? null;
-                if (!$signedPath || !Storage::disk('local')->exists($signedPath)) {
+                if (!$signedPath || !Storage::disk($this->documentsDisk())->exists($signedPath)) {
                     throw ValidationException::withMessages([
                         'sri' => 'Falta el XML firmado (xml_firmado_path). Ejecuta el Paso 3 (firmado) antes del Paso 4.',
                     ]);
@@ -200,7 +203,7 @@ class SriInvoiceService
 
         // 2. Fuera de transacción: Recepción
         if (!$skipReception) {
-            $signedXml = Storage::disk('local')->get($invoice->xml_firmado_path);
+            $signedXml = Storage::disk($this->documentsDisk())->get($invoice->xml_firmado_path);
             $this->assertWellFormedXml($signedXml, 'signed-before-send');
             $this->maybeValidateFacturaXsd($signedXml, 'signed-before-send');
             $recep = $this->callRecepcion($urls['reception_wsdl'], $signedXml);
@@ -456,10 +459,8 @@ class SriInvoiceService
         }
 
         if ($invoice->estado_sri === 'AUTORIZADO' && $xmlAutorizado) {
-            $dir = "sri/xml/autorizados";
-            Storage::disk('local')->makeDirectory($dir);
-            $pathAut = "{$dir}/{$invoice->clave_acceso}.xml";
-            Storage::disk('local')->put($pathAut, $xmlAutorizado);
+            $pathAut = "sri/xml/autorizados/{$invoice->clave_acceso}.xml";
+            Storage::disk($this->documentsDisk())->put($pathAut, $xmlAutorizado);
             $invoice->xml_autorizado_path = $pathAut;
         }
 
@@ -997,12 +998,12 @@ class SriInvoiceService
                 $invoice = $this->generateXmlForSale($sale->id);
             }
 
-            if ($invoice->xml_firmado_path && Storage::disk('local')->exists($invoice->xml_firmado_path)) {
+            if ($invoice->xml_firmado_path && Storage::disk($this->documentsDisk())->exists($invoice->xml_firmado_path)) {
                 return $invoice;
             }
 
             $unsignedPath = $invoice->xml_generado_path ?? null;
-            if (!$unsignedPath || !Storage::disk('local')->exists($unsignedPath)) {
+            if (!$unsignedPath || !Storage::disk($this->documentsDisk())->exists($unsignedPath)) {
                 throw ValidationException::withMessages([
                     'sri' => 'No existe xml_generado_path para firmar.',
                 ]);
@@ -1043,7 +1044,7 @@ class SriInvoiceService
                 ]);
             }
 
-            $unsignedXml = Storage::disk('local')->get($unsignedPath);
+            $unsignedXml = Storage::disk($this->documentsDisk())->get($unsignedPath);
 
             $this->assertWellFormedXml($unsignedXml, 'unsigned-before-sign');
             $this->maybeValidateFacturaXsd($unsignedXml, 'unsigned-before-sign');
@@ -1053,13 +1054,10 @@ class SriInvoiceService
             $this->assertWellFormedXml($signedXml, 'signed-after-sign');
             $this->maybeValidateFacturaXsd($signedXml, 'signed-after-sign');
 
-            $dir = "sri/xml/firmados";
-            Storage::disk('local')->makeDirectory($dir);
-
             $claveAcceso = (string) ($invoice->clave_acceso ?? '');
-            $signedPath = "{$dir}/{$claveAcceso}.xml";
+            $signedPath = "sri/xml/firmados/{$claveAcceso}.xml";
 
-            Storage::disk('local')->put($signedPath, $signedXml);
+            Storage::disk($this->documentsDisk())->put($signedPath, $signedXml);
 
             // 🐛 DEBUG: Verificar XML firmado
             \Illuminate\Support\Facades\Log::info('🐛 DEBUG XML FIRMADO', [
@@ -1459,7 +1457,7 @@ class SriInvoiceService
 
         // 1) Recepción SOLO si aún no fue enviado
         if (!in_array($estado, ['ENVIADO', 'EN_PROCESO'], true)) {
-            $signedXml = Storage::disk('local')->get($invoice->xml_firmado_path);
+            $signedXml = Storage::disk($this->documentsDisk())->get($invoice->xml_firmado_path);
             $recep = $this->callRecepcion($urls['reception_wsdl'], $signedXml);
             Log::info('SRI RECEPCION RAW', [
                 'clave' => $invoice->clave_acceso,

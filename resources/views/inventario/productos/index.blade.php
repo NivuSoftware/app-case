@@ -216,11 +216,15 @@
         });
       }
 
-      document.addEventListener("DOMContentLoaded", () => {
-        cargarProductos();
-        bindBarcodeFocusFlow();
+        document.addEventListener("DOMContentLoaded", () => {
+          cargarProductos();
+          bindBarcodeFocusFlow();
         $("estado-select")?.addEventListener("change", () => {
           cargarProductos(); 
+        });
+
+        window.addEventListener('product-import-finished', () => {
+          cargarProductos();
         });
 
         const btn = $("btn-open-create");
@@ -718,55 +722,12 @@
           await swalSuccess("Importacion iniciada", `Proceso #${importId}`);
 
           if (importId) {
-            await esperarImportacion(importId);
-            cargarProductos();
+            window.ProductImportTracker?.track(importId, { filename: file.name });
           }
         } catch (err) {
           console.error(err);
           swalError("Error", err.message || "No se pudo procesar el archivo");
         }
-      }
-
-      async function esperarImportacion(importId) {
-        const maxIntentos = 180;
-        let intentos = 0;
-
-        while (intentos < maxIntentos) {
-          intentos++;
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-
-          const res = await fetch(`/productos/import/${importId}/status`, {
-            headers: { "Accept": "application/json" },
-          });
-
-          if (!res.ok) continue;
-          const st = await res.json();
-
-          if (st.status === "completed") {
-            const resumen = [
-              `Filas procesadas: ${st.processed_rows || 0}`,
-              `Productos creados: ${st.created_count || 0}`,
-              `Filas con error: ${st.failed_count || 0}`,
-            ].join("\n");
-
-            const errorPreview = st.error_log
-              ? `\n\nErrores (resumen):\n${String(st.error_log).split("\n").slice(0, 10).join("\n")}`
-              : "";
-
-            await Swal.fire({
-              icon: "success",
-              title: "Importacion finalizada",
-              text: resumen + errorPreview,
-            });
-            return;
-          }
-
-          if (st.status === "failed") {
-            throw new Error(st.error_log || "La importacion fallo.");
-          }
-        }
-
-        throw new Error("La importacion sigue en proceso. Revisa en unos segundos.");
       }
 
       window.openCreateModal = openCreateModal;

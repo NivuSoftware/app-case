@@ -18,6 +18,8 @@ class RideService
 
     public function generateForSale(int $saleId): string
     {
+        $disk = (string) config('sri.documents_disk', 'local');
+
         $sale = Sale::with([
             'items',
             'client',
@@ -58,11 +60,8 @@ class RideService
             'cfg' => $cfg,
         ])->setPaper('A4', 'portrait');
 
-        $dir = "sri/ride";
-        Storage::disk('local')->makeDirectory($dir);
-
-        $path = "{$dir}/{$clave}.pdf";
-        Storage::disk('local')->put($path, $pdf->output());
+        $path = "sri/ride/{$clave}.pdf";
+        Storage::disk($disk)->put($path, $pdf->output());
 
         // recomendado: guardar ruta
         $invoice->ride_pdf_path = $path;

@@ -8,13 +8,29 @@ services:
       - ./:/var/www
     ports:
       - "9000:9000"
-      - "5173:5173"
     restart: unless-stopped
     networks:
       - case-network
     depends_on:
       case-db:
         condition: service_healthy
+
+  case-vite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: case-vite
+    command: >
+      sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./:/var/www
+    ports:
+      - "5173:5173"
+    restart: unless-stopped
+    networks:
+      - case-network
+    depends_on:
+      - case-app
 
   case-worker:
     build:

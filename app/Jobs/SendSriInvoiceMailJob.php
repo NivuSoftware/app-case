@@ -28,6 +28,8 @@ class SendSriInvoiceMailJob implements ShouldQueue
         RideService $rideService,
         ElectronicInvoiceRepository $repo
     ): void {
+        $disk = (string) config('sri.documents_disk', 'local');
+
         $sale = Sale::with(['client'])->findOrFail($this->saleId);
         $invoice = $repo->findBySaleId($sale->id);
 
@@ -36,16 +38,16 @@ class SendSriInvoiceMailJob implements ShouldQueue
         }
 
         $xmlPath = (string)($invoice->xml_autorizado_path ?? '');
-        if ($xmlPath === '' || !Storage::disk('local')->exists($xmlPath)) {
+        if ($xmlPath === '' || !Storage::disk($disk)->exists($xmlPath)) {
             return;
         }
 
         $ridePath = (string)($invoice->ride_pdf_path ?? '');
-        if ($ridePath === '' || !Storage::disk('local')->exists($ridePath)) {
+        if ($ridePath === '' || !Storage::disk($disk)->exists($ridePath)) {
             $ridePath = (string) $rideService->generateForSale($sale->id);
         }
 
-        if ($ridePath === '' || !Storage::disk('local')->exists($ridePath)) {
+        if ($ridePath === '' || !Storage::disk($disk)->exists($ridePath)) {
             return;
         }
 
@@ -60,7 +62,8 @@ class SendSriInvoiceMailJob implements ShouldQueue
                 $sale,
                 $invoice,
                 $ridePath,
-                $xmlPath
+                $xmlPath,
+                $disk
             ));
         } catch (\Throwable $e) {
             Log::error('SendSriInvoiceMailJob FAIL', [

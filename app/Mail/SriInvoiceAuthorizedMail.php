@@ -15,7 +15,8 @@ class SriInvoiceAuthorizedMail extends Mailable
         public Sale $sale,
         public $invoice,
         public string $ridePath,
-        public string $xmlAutorizadoPath
+        public string $xmlAutorizadoPath,
+        public string $disk = 'local'
     ) {}
 
     public function build()
@@ -26,10 +27,10 @@ class SriInvoiceAuthorizedMail extends Mailable
                 'sale' => $this->sale,
                 'invoice' => $this->invoice,
             ])
-            ->attachFromStorageDisk('local', $this->ridePath, 'RIDE.pdf', [
+            ->attachFromStorageDisk($this->disk, $this->ridePath, 'RIDE.pdf', [
                 'mime' => 'application/pdf',
             ])
-            ->attachFromStorageDisk('local', $this->xmlAutorizadoPath, 'FACTURA.xml', [
+            ->attachFromStorageDisk($this->disk, $this->xmlAutorizadoPath, 'FACTURA.xml', [
                 'mime' => 'application/xml',
             ]);
     }
