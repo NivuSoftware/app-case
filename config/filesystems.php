@@ -13,7 +13,16 @@ return [
     |
     */
 
-    'default' => env('FILESYSTEM_DISK', 'local'),
+    'default' => env(
+        'DEFAULT_FILESYSTEM_DRIVER',
+        env(
+            'FILESYSTEM_DRIVER',
+            env(
+                'FILESYSTEM_DISK',
+                explode(',', (string) env('SUPPORTED_FILE_SYSTEMS', 'local'))[0]
+            )
+        )
+    ),
 
     /*
     |--------------------------------------------------------------------------
@@ -41,21 +50,30 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => env('APP_URL').'/storage',
+            'url' => env('APP_URL') . '/storage',
             'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'sri' => [
+            'driver' => 'local',
+            'root' => storage_path('app'),
             'throw' => false,
             'report' => false,
         ],
 
         's3' => [
             'driver' => 's3',
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'key' => env('AWS_ACCESS_KEY_ID', env('AWS_KEY')),
+            'secret' => env('AWS_SECRET_ACCESS_KEY', env('AWS_SECRET')),
             'region' => env('AWS_DEFAULT_REGION'),
             'bucket' => env('AWS_BUCKET'),
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'visibility' => 'private',
+            'directory_visibility' => 'private',
             'throw' => false,
             'report' => false,
         ],

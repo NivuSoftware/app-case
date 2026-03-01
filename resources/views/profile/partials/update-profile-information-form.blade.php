@@ -11,11 +11,6 @@
         </p>
     </header>
 
-    <!-- Email verification form -->
-    <form id="send-verification" method="post" action="{{ route('verification.send') }}">
-        @csrf
-    </form>
-
     <!-- Profile Update Form -->
     <form method="post" action="{{ route('profile.update') }}" class="space-y-6">
         @csrf
@@ -45,27 +40,6 @@
                           focus:border-blue-500 focus:ring-blue-500 px-3 py-2 shadow-sm" />
 
             <x-input-error class="mt-2 text-red-500 text-sm" :messages="$errors->get('email')" />
-
-            <!-- Verification block -->
-            @if ($user instanceof \Illuminate\Contracts\Auth\MustVerifyEmail && ! $user->hasVerifiedEmail())
-                <div class="mt-3 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
-
-                    <p class="text-sm text-yellow-800">
-                        Tu correo aún no está verificado.
-
-                        <button form="send-verification"
-                                class="underline text-blue-700 hover:text-blue-900 ml-1">
-                            Reenviar correo de verificación
-                        </button>
-                    </p>
-
-                    @if (session('status') === 'verification-link-sent')
-                        <p class="mt-2 text-sm text-green-600 font-medium">
-                            Se ha enviado un nuevo enlace de verificación a tu correo.
-                        </p>
-                    @endif
-                </div>
-            @endif
         </div>
 
         <!-- Botón -->
