@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 use SoapClient;
 use RobRichards\XMLSecLibs\XMLSecurityDSig;
 use RobRichards\XMLSecLibs\XMLSecurityKey;
@@ -28,6 +30,42 @@ class SriInvoiceService
     private function documentsDisk(): string
     {
         return (string) config('sri.documents_disk', 'local');
+    }
+
+    private function storageContext(string $disk, string $path): array
+    {
+        $diskConfig = (array) config("filesystems.disks.{$disk}", []);
+        return [
+            'disk' => $disk,
+            'driver' => $diskConfig['driver'] ?? null,
+            'bucket' => $diskConfig['bucket'] ?? null,
+            'region' => $diskConfig['region'] ?? null,
+            'visibility' => $diskConfig['visibility'] ?? null,
+            'directory_visibility' => $diskConfig['directory_visibility'] ?? null,
+            'path' => $path,
+        ];
+    }
+
+    private function putDocument(string $path, string $contents, string $stage): void
+    {
+        $disk = $this->documentsDisk();
+        $base = $this->storageContext($disk, $path);
+        $base['stage'] = $stage;
+        $base['bytes'] = strlen($contents);
+
+        Log::info('SRI storage write start', $base);
+
+        try {
+            $ok = Storage::disk($disk)->put($path, $contents);
+            if ($ok !== true) {
+                throw new RuntimeException('Storage::put returned false');
+            }
+            Log::info('SRI storage write success', $base);
+        } catch (Throwable $e) {
+            $base['error'] = $e->getMessage();
+            Log::error('SRI storage write failed', $base);
+            throw $e;
+        }
     }
 
     public function isProductionEnv(): bool
@@ -125,7 +163,7 @@ class SriInvoiceService
 
 
             $xmlPath = "sri/xml/generados/{$claveAcceso}.xml";
-            Storage::disk($this->documentsDisk())->put($xmlPath, $xmlString);
+            $this->putDocument($xmlPath, $xmlString, 'generate_xml');
 
             $invoice = $this->repo->create([
                 'sale_id' => $sale->id,
@@ -460,7 +498,7 @@ class SriInvoiceService
 
         if ($invoice->estado_sri === 'AUTORIZADO' && $xmlAutorizado) {
             $pathAut = "sri/xml/autorizados/{$invoice->clave_acceso}.xml";
-            Storage::disk($this->documentsDisk())->put($pathAut, $xmlAutorizado);
+            $this->putDocument($pathAut, $xmlAutorizado, 'store_authorized_xml');
             $invoice->xml_autorizado_path = $pathAut;
         }
 
@@ -1057,7 +1095,7 @@ class SriInvoiceService
             $claveAcceso = (string) ($invoice->clave_acceso ?? '');
             $signedPath = "sri/xml/firmados/{$claveAcceso}.xml";
 
-            Storage::disk($this->documentsDisk())->put($signedPath, $signedXml);
+            $this->putDocument($signedPath, $signedXml, 'store_signed_xml');
 
             // 🐛 DEBUG: Verificar XML firmado
             \Illuminate\Support\Facades\Log::info('🐛 DEBUG XML FIRMADO', [
@@ -1521,6 +1559,13 @@ class SriInvoiceService
             );
 
             if ($is70) {
+                $invoice->estado_sri = 'EN_PROCESO';
+                $invoice->save();
+                return ['status' => 'PROCESSING', 'invoice' => $invoice->fresh()];
+            }
+
+            // Fallo tecnico/transitorio en recepcion SRI: no es rechazo final.
+            if ($estadoRec === 'ERROR_RECEPCION') {
                 $invoice->estado_sri = 'EN_PROCESO';
                 $invoice->save();
                 return ['status' => 'PROCESSING', 'invoice' => $invoice->fresh()];

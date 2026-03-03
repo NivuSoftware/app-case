@@ -36,7 +36,7 @@ const rows = rawRows.map((row) => {
 
   return {
     nombre: normalized.nombre || "",
-    codigo_interno: normalized.codigo_interno || "",
+    codigo_interno: normalized.codigo_interno || normalized.codigo_int || "",
     codigo_barras: normalized.codigo_barras || "",
     categoria: normalized.categoria || "",
     unidad_medida: normalized.unidad_medida || "",
@@ -44,6 +44,7 @@ const rows = rawRows.map((row) => {
     descripcion: normalized.descripcion || "",
     iva_porcentaje: normalized.iva_porcentaje || "",
     precio_unitario: normalized.precio_unitario || "",
+    stock: normalized.stock || "",
   };
 });
 
