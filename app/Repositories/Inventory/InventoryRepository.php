@@ -3,6 +3,7 @@
 namespace App\Repositories\Inventory;
 
 use App\Models\Inventory\Inventory;
+use App\Support\ProductSearch;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -117,11 +118,7 @@ class InventoryRepository
             ->orderBy('i.id', 'desc');
 
         if ($search !== null && $search !== '') {
-            $query->where(function (Builder $subQuery) use ($search) {
-                $subQuery->where('p.nombre', 'like', '%' . $search . '%')
-                    ->orWhere('p.codigo_interno', 'like', '%' . $search . '%')
-                    ->orWhere('p.codigo_barras', 'like', '%' . $search . '%');
-            });
+            ProductSearch::apply($query, $search, 'p.nombre', ['p.codigo_interno', 'p.codigo_barras']);
         }
 
         if ($bodegaId !== null) {

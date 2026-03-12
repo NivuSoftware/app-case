@@ -179,28 +179,7 @@ function renderClientResults(clients) {
  * y llama a renderClientResults().
  */
 function filterAndRenderClients(term) {
-    const normalized = term.trim().toLowerCase();
-
-    if (!normalized) {
-        renderClientResults(allClients);
-        return;
-    }
-
-    const filtered = allClients.filter((c) => {
-        const name = (c.business || '').toLowerCase();
-        const identificacion = (c.identificacion || '');
-        const telefono = (c.telefono || '');
-        const ciudad = (c.ciudad || '').toLowerCase();
-
-        return (
-            name.includes(normalized) ||
-            identificacion.includes(normalized) ||
-            telefono.includes(normalized) ||
-            ciudad.includes(normalized)
-        );
-    });
-
-    renderClientResults(filtered);
+    renderClientResults(getFilteredClients(term));
 }
 
 /**
@@ -314,6 +293,130 @@ function isConsumidorFinalByIdent(ident) {
   const clean = String(ident || '').replace(/\D+/g, '');
   const cfClean = String(cfIdent || '').replace(/\D+/g, '');
   return clean && cfClean && clean === cfClean;
+}
+
+function normalizeClientTerm(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getFilteredClients(term) {
+  const normalized = normalizeClientTerm(term);
+
+  if (!normalized) {
+    return allClients;
+  }
+
+  return allClients.filter((c) => {
+    const name = normalizeClientTerm(c.business || c.nombre || '');
+    const identificacion = normalizeClientTerm(c.identificacion || '');
+    const telefono = normalizeClientTerm(c.telefono || '');
+    const ciudad = normalizeClientTerm(c.ciudad || '');
+
+    return (
+      name.includes(normalized) ||
+      identificacion.includes(normalized) ||
+      telefono.includes(normalized) ||
+      ciudad.includes(normalized)
+    );
+  });
+}
+
+function applyClientSelection(client) {
+  if (!client) return;
+
+  const inputId = document.getElementById('client_id');
+  const inputName = document.getElementById('cliente_nombre');
+  const identEl = document.getElementById('cliente_identificacion');
+  const quickSearch = document.getElementById('client_quick_search');
+
+  const clientId = client.id;
+  const clientName = client.business || client.nombre || 'Cliente seleccionado';
+  const clientIdent = client.identificacion || '';
+
+  if (isConsumidorFinalByIdent(clientIdent)) {
+    setConsumidorFinalUI();
+  } else {
+    if (inputId) {
+      inputId.value = clientId;
+      inputId.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (inputName) inputName.textContent = clientName;
+    if (identEl) identEl.textContent = clientIdent || 'Sin identificación';
+  }
+
+  if (quickSearch) quickSearch.value = '';
+}
+
+function inferTipoIdentificacion(value) {
+  const digits = String(value || '').replace(/\D+/g, '');
+  if (digits.length === 10) return 'CEDULA';
+  if (digits.length === 13) return 'RUC';
+  return '';
+}
+
+function prefillCreateClientForm(prefill = {}) {
+  const modal = document.getElementById('createClientModal');
+  if (!modal) return;
+
+  const tipoSelect = modal.querySelector('select[name="tipo"]');
+  const tipoIdentSelect = modal.querySelector('select[name="tipo_identificacion"]');
+  const identificacionInput = modal.querySelector('input[name="identificacion"]');
+  const nombresInput = modal.querySelector('#create-nombres');
+  const apellidosInput = modal.querySelector('#create-apellidos');
+  const razonInput = modal.querySelector('#create-razon-social');
+  const telefonoInput = modal.querySelector('input[name="telefono"]');
+  const ciudadInput = modal.querySelector('input[name="ciudad"]');
+  const direccionInput = modal.querySelector('input[name="direccion"]');
+
+  const identificacion = String(prefill.identificacion || '').trim();
+  const tipoIdentificacion = prefill.tipo_identificacion || inferTipoIdentificacion(identificacion);
+
+  if (tipoSelect) tipoSelect.value = tipoIdentificacion === 'RUC' ? 'juridico' : 'natural';
+  if (tipoIdentSelect && tipoIdentificacion) tipoIdentSelect.value = tipoIdentificacion;
+  if (identificacionInput) identificacionInput.value = identificacion;
+  if (nombresInput) nombresInput.value = '';
+  if (apellidosInput) apellidosInput.value = '';
+  if (razonInput) razonInput.value = '';
+  if (telefonoInput) telefonoInput.value = '';
+  if (ciudadInput) ciudadInput.value = '';
+  if (direccionInput) direccionInput.value = '';
+
+  tipoSelect?.dispatchEvent(new Event('change', { bubbles: true }));
+  updateCreateBusiness();
+
+  const focusTarget = tipoIdentificacion === 'RUC' ? razonInput : nombresInput;
+  focusTarget?.focus();
+}
+
+function findBestClientMatch(term) {
+  const normalized = normalizeClientTerm(term);
+  if (!normalized) return { type: 'none' };
+
+  const exactIdent = allClients.find((client) =>
+    normalizeClientTerm(client.identificacion || '') === normalized
+  );
+  if (exactIdent) return { type: 'single', client: exactIdent };
+
+  const exactName = allClients.find((client) =>
+    normalizeClientTerm(client.business || client.nombre || '') === normalized
+  );
+  if (exactName) return { type: 'single', client: exactName };
+
+  const filtered = getFilteredClients(term);
+  if (filtered.length === 1) return { type: 'single', client: filtered[0] };
+  if (filtered.length > 1) return { type: 'multiple', clients: filtered };
+
+  return { type: 'none' };
+}
+
+function openSearchModalWithResults(term, clients) {
+  const searchModal = document.getElementById('client-modal');
+  const searchInput = document.getElementById('client_search_term');
+  if (!searchModal) return;
+
+  searchModal.classList.remove('hidden');
+  if (searchInput) searchInput.value = term;
+  renderClientResults(clients);
 }
 
 
@@ -484,11 +587,14 @@ function setupCreateClientForm() {
 
 
 // Funciones globales usadas por el Blade de create client
-window.openCreateModal = function () {
+window.openCreateModal = function (prefill = null) {
     const modal = document.getElementById('createClientModal');
     if (!modal) return;
     modal.classList.remove('hidden');
     setupCreateClientForm();
+    if (prefill) {
+      prefillCreateClientForm(prefill);
+    }
 };
 
 window.closeCreateModal = function () {
@@ -535,21 +641,12 @@ export function initClientSelector() {
     console.log('[POS] initClientSelector() ejecutado');
 
     const searchModal = document.getElementById('client-modal');        // modal de búsqueda
-    const btnSearch   = document.getElementById('btn-search-client');   // lupa
     const btnCreate   = document.getElementById('btn-open-client-modal'); // botón +
     const createModal = document.getElementById('createClientModal');   // modal crear
     const clientIdInput = document.getElementById('client_id');
+    const quickSearch = document.getElementById('client_quick_search');
 
-    // 🔍 Abrir modal de búsqueda
-    if (btnSearch && searchModal) {
-        btnSearch.addEventListener('click', async () => {
-            console.log('[POS] Click en buscar cliente');
-            searchModal.classList.remove('hidden');
-
-            await loadAllClients();
-            renderClientResults(allClients);
-        });
-
+    if (searchModal) {
         searchModal.querySelectorAll('[data-client-close]').forEach((btn) => {
             btn.addEventListener('click', () => searchModal.classList.add('hidden'));
         });
@@ -579,48 +676,44 @@ export function initClientSelector() {
         tbody.addEventListener('click', (e) => {
             const tr = e.target.closest('tr[data-client-id]');
             if (!tr) return;
-
-            const clientId   = tr.dataset.clientId;
-            const clientName = tr.dataset.clientName;
-            const clientIdent = tr.dataset.clientIdentificacion || '';
-
-            console.log('[POS] Cliente seleccionado en tabla:', {
-                clientId,
-                clientName,
-                clientIdent,
+            applyClientSelection({
+              id: tr.dataset.clientId,
+              business: tr.dataset.clientName,
+              identificacion: tr.dataset.clientIdentificacion || '',
             });
-
-            const inputId   = document.getElementById('client_id');
-            const inputName = document.getElementById('cliente_nombre');
-            const identEl   = document.getElementById('cliente_identificacion');
-
-            const isCF = isConsumidorFinalByIdent(clientIdent);
-
-            if (isCF) {
-            setConsumidorFinalUI();
-            } else {
-            if (inputId) {
-                inputId.value = clientId;
-                inputId.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            if (inputName) {
-                inputName.textContent = clientName || 'Cliente seleccionado';
-            }
-            if (identEl) {
-                identEl.textContent = clientIdent || 'Sin identificación';
-            }
-            }
-
-
 
             if (searchModal) {
                 searchModal.classList.add('hidden');
             }
-
-            
-
         });
         selectDefaultConsumidorFinalIfEmpty();
+    }
+
+    if (quickSearch) {
+      quickSearch.addEventListener('keydown', async (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+
+        const term = quickSearch.value.trim();
+        if (!term) return;
+
+        await loadAllClients();
+        const result = findBestClientMatch(term);
+
+        if (result.type === 'single' && result.client) {
+          applyClientSelection(result.client);
+          return;
+        }
+
+        if (result.type === 'multiple' && Array.isArray(result.clients)) {
+          openSearchModalWithResults(term, result.clients);
+          return;
+        }
+
+        window.openCreateModal({
+          identificacion: term,
+        });
+      });
     }
 
     if (clientIdInput) {

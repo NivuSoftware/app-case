@@ -104,12 +104,12 @@
                     </div>
                 </section>
 
-                {{-- =============== COL DERECHA: CLIENTE + CARRITO (HACER MAS ANCHA) =============== --}}
                 <section class="flex-[1.4] flex flex-col gap-4">
                                         {{-- CLIENTE (Movido aquí) --}}
                     <div class="bg-white border border-slate-200 rounded-3xl shadow-lg overflow-hidden shrink-0">
-                        <div class="flex items-center justify-between px-3 py-2 bg-slate-100">
-                            <div class="min-w-0">
+                        <div class="px-3 py-2 bg-slate-100 space-y-2">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="min-w-0">
                                 <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
                                     Cliente
                                 </p>
@@ -127,9 +127,9 @@
                                 <p id="cliente_identificacion" class="text-[10px] text-slate-400 truncate">
                                     Cédula o RUC aquí
                                 </p>
-                            </div>
+                                </div>
 
-                            <div class="flex items-center gap-1">
+                                <div class="flex items-center gap-1 shrink-0">
                                 <button
                                     type="button"
                                     id="btn-open-client-modal"
@@ -138,14 +138,17 @@
                                 >
                                     +
                                 </button>
-                                <button
-                                    type="button"
-                                    id="btn-search-client"
-                                    class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-900 text-white shadow hover:bg-black"
-                                    title="Buscar cliente"
+                                </div>
+                            </div>
+
+                            <div class="relative">
+                                <input
+                                    type="text"
+                                    id="client_quick_search"
+                                    class="w-full border-slate-200 rounded-full pl-8 pr-3 py-1.5 text-[11px] shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                    placeholder="Buscar cliente por cédula, RUC o nombre"
+                                    autocomplete="off"
                                 >
-                                    <x-heroicon-s-magnifying-glass class="w-3 h-3" />
-                                </button>
                             </div>
                         </div>
 
@@ -175,7 +178,7 @@
                             </div>
                             <div class="text-right">
                                 <p class="text-[11px] text-slate-500 uppercase font-semibold">Total</p>
-                                <p id="resumen-total" class="text-2xl font-bold text-blue-700">$ 0.00</p>
+                                <p id="cart-total-display" class="text-2xl font-bold text-blue-700">$ 0.00</p>
                             </div>
                         </header>
 
@@ -203,38 +206,40 @@
                             </div>
                         </div>
 
+                        <div class="px-4 py-2 border-t border-slate-100 bg-white flex justify-end">
+                            <button
+                                type="button"
+                                id="btn-clear-cart"
+                                class="inline-flex justify-center items-center px-3 py-1.5 bg-rose-50 border border-rose-200 rounded-lg font-semibold text-[11px] text-rose-700 uppercase tracking-wide hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-300"
+                            >
+                                Limpiar carrito
+                            </button>
+                        </div>
+
                         {{-- TOTALES + OBSERVACIONES + COBRAR --}}
-                        <footer class="border-t border-slate-100 bg-white px-5 pt-3 pb-4 space-y-3">
-                            <div class="space-y-1.5 text-[12px] text-slate-600">
+                        <footer class="border-t border-slate-100 bg-white px-4 pt-2 pb-2.5 space-y-2">
+                            <div class="space-y-1 text-[12px] text-slate-600">
                                 <div class="flex justify-between">
-                                    <span>Base imponible (sin IVA)</span>
+                                    <span>Subtotal (sin IVA)</span>
                                     <span id="resumen-subtotal">$ 0.00</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Subtotal (precio final)</span>
-                                    <span id="resumen-subtotal-bruto">$ 0.00</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Descuento</span>
-                                    <span id="resumen-descuento">$ 0.00</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Impuesto</span>
-                                    <span id="resumen-impuesto">$ 0.00</span>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <span class="text-[12px] text-slate-700">IVA</span>
                                     <span id="resumen-iva">$ 0.00</span>
-
-                                    <input type="hidden" id="iva_enabled" value="1">
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[12px] text-slate-700">Descuento</span>
+                                    <span id="resumen-descuento">$ 0.00</span>
+                                </div>
+                                <div class="flex justify-between font-semibold text-slate-800">
+                                    <span>Total</span>
+                                    <span id="resumen-total">$ 0.00</span>
                                 </div>
 
-
-
-
+                                <input type="hidden" id="iva_enabled" value="1">
                             </div>
 
-                            <div class="space-y-3">
+                            <div class="space-y-2">
                                 {{-- Método de pago --}}
                                 <div class="flex flex-col space-y-1">
                                     <label class="text-[11px] text-slate-500 uppercase font-semibold">
@@ -242,10 +247,10 @@
                                     </label>
                                     <select
                                         id="payment_modal_metodo"
-                                        class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs h-9"
+                                        class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-[11px] h-7 leading-tight"
                                     >
                                         @foreach($paymentMethods as $pm)
-                                            <option value="{{ $pm->nombre }}" data-id="{{ $pm->id }}" {{ $pm->nombre == 'EFECTIVO' ? 'selected' : '' }}>
+                                            <option value="{{ $pm->nombre }}" data-id="{{ $pm->id }}" {{ $pm->nombre == 'EFECTIVO' ? 'selected' : '' }} style="font-size:11px;">
                                                 {{ $pm->nombre }}
                                             </option>
                                         @endforeach
@@ -262,13 +267,13 @@
                                         step="0.01"
                                         min="0"
                                         id="payment_modal_monto_recibido"
-                                        class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm h-9"
+                                        class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm h-8"
                                         placeholder="0.00"
                                     >
                                 </div>
 
                                 {{-- Referencia y Observaciones (Pago) --}}
-                                <div class="grid grid-cols-2 gap-2">
+                                <div class="grid grid-cols-2 gap-1.5">
                                     <div class="flex flex-col space-y-1">
                                         <label class="text-[10px] text-slate-400 uppercase font-semibold">
                                             Referencia
@@ -276,7 +281,7 @@
                                         <input
                                             type="text"
                                             id="payment_modal_referencia"
-                                            class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs h-8"
+                                            class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs h-7"
                                             placeholder="Nro. voucher..."
                                         >
                                     </div>
@@ -287,7 +292,7 @@
                                         <textarea
                                             id="payment_modal_observaciones"
                                             rows="1"
-                                            class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs py-1"
+                                            class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs py-0.5"
                                             placeholder="Notas..."
                                         ></textarea>
                                     </div>
@@ -297,58 +302,65 @@
                             <button
                                 type="button"
                                 id="btn-confirm-payment"
-                                class="w-full inline-flex justify-center items-center gap-2 px-4 py-3 bg-emerald-600 border border-transparent rounded-2xl font-semibold text-sm text-white uppercase tracking-wide shadow-xl hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                                class="w-full inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-emerald-600 border border-transparent rounded-2xl font-semibold text-sm text-white uppercase tracking-wide shadow-xl hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
                             >
                                 <x-heroicon-s-currency-dollar class="w-5 h-5" />
                                 <span>COBRAR</span>
                             </button>
+
                             @php
                                 $hasCaja = !empty($cajaId);
                             @endphp
 
-                            <div class="grid grid-cols-3 gap-2">
-                                <button
-                                    type="button"
-                                    id="btn-open-cash-in"
-                                    class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl font-semibold text-xs uppercase tracking-wide shadow
-                                        {{ $hasCaja ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed' }}"
-                                    {{ $hasCaja ? '' : 'disabled' }}
-                                    title="{{ $hasCaja ? 'Registrar ingreso de caja' : 'Primero abre caja' }}"
-                                >
-                                    Ingreso
-                                </button>
+                            <details class="group rounded-2xl border border-slate-200 bg-slate-50">
+                                <summary class="list-none flex items-center justify-between px-4 py-2.5 cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-700">
+                                    <span>Opciones de caja</span>
+                                    <span class="text-slate-400 transition group-open:rotate-180">⌄</span>
+                                </summary>
 
-                                <button
-                                    type="button"
-                                    id="btn-open-cash-out"
-                                    class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl font-semibold text-xs uppercase tracking-wide shadow
-                                        {{ $hasCaja ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed' }}"
-                                    {{ $hasCaja ? '' : 'disabled' }}
-                                    title="{{ $hasCaja ? 'Registrar retiro de caja' : 'Primero abre caja' }}"
-                                >
-                                    Retiro
-                                </button>
-
-                                {{-- Cerrar Caja (Movido aquí) --}}
-                                @if($cajaId)
-                                    <a
-                                        href="{{ route('cashier.close.view', ['caja_id' => $cajaId]) }}"
-                                        class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl bg-rose-600 text-white text-xs font-semibold uppercase tracking-wide shadow hover:bg-rose-700 transition lg:truncate"
-                                        title="Cerrar caja"
-                                    >
-                                        Cerrar Caja
-                                    </a>
-                                @else
+                                <div class="px-3 pb-3 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                                     <button
                                         type="button"
-                                        class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl bg-slate-200 text-slate-400 text-xs font-semibold uppercase tracking-wide shadow cursor-not-allowed lg:truncate"
-                                        title="Primero abre caja"
-                                        disabled
+                                        id="btn-open-cash-in"
+                                        class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl font-semibold text-xs uppercase tracking-wide shadow
+                                            {{ $hasCaja ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed' }}"
+                                        {{ $hasCaja ? '' : 'disabled' }}
+                                        title="{{ $hasCaja ? 'Registrar ingreso de caja' : 'Primero abre caja' }}"
                                     >
-                                        Cerrar Caja
+                                        Ingreso
                                     </button>
-                                @endif
-                            </div>
+
+                                    <button
+                                        type="button"
+                                        id="btn-open-cash-out"
+                                        class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl font-semibold text-xs uppercase tracking-wide shadow
+                                            {{ $hasCaja ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed' }}"
+                                        {{ $hasCaja ? '' : 'disabled' }}
+                                        title="{{ $hasCaja ? 'Registrar retiro de caja' : 'Primero abre caja' }}"
+                                    >
+                                        Retiro
+                                    </button>
+
+                                    @if($cajaId)
+                                        <a
+                                            href="{{ route('cashier.close.view', ['caja_id' => $cajaId]) }}"
+                                            class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl bg-rose-600 text-white text-xs font-semibold uppercase tracking-wide shadow hover:bg-rose-700 transition lg:truncate"
+                                            title="Cerrar caja"
+                                        >
+                                            Cerrar Caja
+                                        </a>
+                                    @else
+                                        <button
+                                            type="button"
+                                            class="w-full inline-flex justify-center items-center px-2 py-2 rounded-2xl bg-slate-200 text-slate-400 text-xs font-semibold uppercase tracking-wide shadow cursor-not-allowed lg:truncate"
+                                            title="Primero abre caja"
+                                            disabled
+                                        >
+                                            Cerrar Caja
+                                        </button>
+                                    @endif
+                                </div>
+                            </details>
                         </footer>
                     </div>
                 </section>
@@ -396,6 +408,20 @@
         window.AUTH_USER_ID = @json(auth()->id());
 
         console.log('[POS] AUTH_USER_ID =', window.AUTH_USER_ID);
+    </script>
+
+    <script>
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'F12') return;
+
+            event.preventDefault();
+
+            const productSearchInput = document.getElementById('item_descripcion');
+            if (!productSearchInput) return;
+
+            productSearchInput.focus();
+            productSearchInput.select?.();
+        });
     </script>
 
     <script>

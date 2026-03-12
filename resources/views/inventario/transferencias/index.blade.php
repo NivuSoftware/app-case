@@ -318,6 +318,41 @@
             });
         }
 
+        function normalizeSearchText(value) {
+            return String(value || '').trim().toLowerCase();
+        }
+
+        function tokenizeSearch(value) {
+            return normalizeSearchText(value).split(/\s+/).filter(Boolean);
+        }
+
+        function matchesFlexibleProduct(product, rawTerm) {
+            const term = normalizeSearchText(rawTerm);
+            if (!term) return true;
+
+            const compactTerm = term.replace(/\s+/g, '');
+            const digitsOnly = compactTerm.replace(/\D/g, '');
+            const name = normalizeSearchText(product.nombre);
+            const code = normalizeSearchText(product.codigo_interno);
+            const bar = normalizeSearchText(product.codigo_barras);
+            const tokens = tokenizeSearch(term);
+
+            const directMatch =
+                name.includes(term) ||
+                code.includes(compactTerm) ||
+                bar.includes(compactTerm) ||
+                (digitsOnly && (code.includes(digitsOnly) || bar.includes(digitsOnly)));
+
+            if (directMatch) return true;
+            if (tokens.length <= 1) return false;
+
+            return tokens.every(token =>
+                name.includes(token) ||
+                code.includes(token) ||
+                bar.includes(token)
+            );
+        }
+
         function buscarProductoOrigen(texto) {
             const list = document.getElementById('search-results');
             const hidden = document.getElementById('c-producto');
@@ -336,12 +371,8 @@
                 return;
             }
 
-            const term = texto.trim().toLowerCase();
-            const results = PRODUCTOS_ORIGEN.filter(p => {
-                return (p.nombre || '').toLowerCase().includes(term)
-                    || (p.codigo_interno || '').toLowerCase().includes(term)
-                    || (p.codigo_barras || '').toLowerCase().includes(term);
-            }).slice(0, 10);
+            const term = texto.trim();
+            const results = PRODUCTOS_ORIGEN.filter(p => matchesFlexibleProduct(p, term)).slice(0, 10);
 
             list.innerHTML = '';
             if (results.length === 0) {

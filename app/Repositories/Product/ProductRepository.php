@@ -3,6 +3,7 @@
 namespace App\Repositories\Product;
 
 use App\Models\Product\Product;
+use App\Support\ProductSearch;
 use Illuminate\Database\Eloquent\Builder;
 
 class ProductRepository
@@ -25,11 +26,7 @@ class ProductRepository
         }
 
         if ($search !== null && $search !== '') {
-            $query->where(function (Builder $subQuery) use ($search) {
-                $subQuery->where('nombre', 'like', '%' . $search . '%')
-                    ->orWhere('codigo_interno', 'like', '%' . $search . '%')
-                    ->orWhere('codigo_barras', 'like', '%' . $search . '%');
-            });
+            ProductSearch::apply($query, $search);
         }
 
         return $query;
@@ -114,11 +111,7 @@ class ProductRepository
         }
 
         if ($search !== null && $search !== '') {
-            $query->where(function ($subQuery) use ($search) {
-                $subQuery->where('nombre', 'like', '%' . $search . '%')
-                    ->orWhere('codigo_interno', 'like', '%' . $search . '%')
-                    ->orWhere('codigo_barras', 'like', '%' . $search . '%');
-            });
+            ProductSearch::apply($query, $search);
         }
 
         return $query->get();
@@ -154,12 +147,7 @@ class ProductRepository
             $searchExact = $search;
             $searchPrefix = $search . '%';
             $searchLike = '%' . $search . '%';
-
-            $query->where(function (Builder $subQuery) use ($search) {
-                $subQuery->where('nombre', 'like', '%' . $search . '%')
-                    ->orWhere('codigo_interno', 'like', '%' . $search . '%')
-                    ->orWhere('codigo_barras', 'like', '%' . $search . '%');
-            });
+            ProductSearch::apply($query, $search);
 
             // Prioriza codigo exacto, luego prefijo de codigo y finalmente nombre.
             $query->orderByRaw(

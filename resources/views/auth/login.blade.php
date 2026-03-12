@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="{{ asset('lg.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="flex h-screen">
+<body class="flex h-screen no-uppercase">
 
     <!-- Fondo -->
     <div class="absolute inset-0 bg-cover bg-center" 

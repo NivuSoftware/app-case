@@ -8,6 +8,7 @@ use App\Models\Sri\ElectronicInvoice;
 use App\Models\Cashier\CashSession;
 use App\Models\Inventory\Inventory;
 use App\Models\Product\Product;
+use App\Support\ProductSearch;
 use Illuminate\Support\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -296,11 +297,7 @@ class ReportingRepository
         }
 
         if ($q !== '') {
-            $query->where(function ($sub) use ($q) {
-                $sub->where('p.nombre', 'like', "%{$q}%")
-                    ->orWhere('p.codigo_interno', 'like', "%{$q}%")
-                    ->orWhere('p.codigo_barras', 'like', "%{$q}%");
-            });
+            ProductSearch::apply($query, $q, 'p.nombre', ['p.codigo_interno', 'p.codigo_barras']);
         }
 
         $query->orderByRaw('CASE WHEN SUM(inventario.stock_actual) < p.stock_minimo THEN 0 ELSE 1 END ASC');
