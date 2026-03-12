@@ -256,6 +256,41 @@
             minimumFractionDigits: 2
         });
 
+        function normalizeSearchText(value) {
+            return String(value || '').trim().toLowerCase();
+        }
+
+        function tokenizeSearch(value) {
+            return normalizeSearchText(value).split(/\s+/).filter(Boolean);
+        }
+
+        function matchesFlexibleProduct(product, rawTerm) {
+            const term = normalizeSearchText(rawTerm);
+            if (!term) return true;
+
+            const compactTerm = term.replace(/\s+/g, '');
+            const digitsOnly = compactTerm.replace(/\D/g, '');
+            const name = normalizeSearchText(product.nombre);
+            const code = normalizeSearchText(product.codigo_interno);
+            const bar = normalizeSearchText(product.codigo_barras);
+            const tokens = tokenizeSearch(term);
+
+            const directMatch =
+                name.includes(term) ||
+                code.includes(compactTerm) ||
+                bar.includes(compactTerm) ||
+                (digitsOnly && (code.includes(digitsOnly) || bar.includes(digitsOnly)));
+
+            if (directMatch) return true;
+            if (tokens.length <= 1) return false;
+
+            return tokens.every(token =>
+                name.includes(token) ||
+                code.includes(token) ||
+                bar.includes(token)
+            );
+        }
+
         function agregarItem() {
             const productoId = document.getElementById('c-producto').value;
             const bodegaId = document.getElementById('c-bodega').value;
@@ -358,17 +393,8 @@
             }
 
             // Filtrar productos por nombre, cod interno o cod barras
-            const results = PRODUCTS.filter(p => {
-                const name = (p.nombre || '').toLowerCase();
-                const code = (p.codigo_interno || '').toLowerCase();
-                const bar = (p.codigo_barras || '').toLowerCase();
-                return (
-                    name.includes(rawTerm) ||
-                    code.includes(compactTerm) ||
-                    bar.includes(compactTerm) ||
-                    (digitsOnly && (code.includes(digitsOnly) || bar.includes(digitsOnly)))
-                );
-            }).slice(0, 10); // Limitar a 10 resultados para no saturar
+            const results = PRODUCTS.filter(p => matchesFlexibleProduct(p, rawTerm))
+                .slice(0, 10); // Limitar a 10 resultados para no saturar
 
             list.innerHTML = '';
             if (results.length === 0) {

@@ -147,6 +147,14 @@ export function initCart() {
   const addBtn = document.getElementById('btn-add-item');
   if (addBtn) addBtn.addEventListener('click', addItemFromHiddenForm);
 
+  const clearBtn = document.getElementById('btn-clear-cart');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (cart.length === 0) return;
+      clearCart();
+    });
+  }
+
   const tbody = document.getElementById('cart-body');
   if (tbody) {
     tbody.addEventListener('click', (e) => {
@@ -441,6 +449,7 @@ function recalcSummary() {
   const impEl = document.getElementById('resumen-impuesto');
   const ivaEl = document.getElementById('resumen-iva');
   const totEl = document.getElementById('resumen-total');
+  const totalDisplayEl = document.getElementById('cart-total-display');
 
   if (subEl) subEl.textContent = formatMoney(subtotal);
   if (subBrutoEl) subBrutoEl.textContent = formatMoney(subtotal_bruto);
@@ -448,6 +457,7 @@ function recalcSummary() {
   if (impEl) impEl.textContent = formatMoney(impuesto);
   if (ivaEl) ivaEl.textContent = formatMoney(iva);
   if (totEl) totEl.textContent = formatMoney(total);
+  if (totalDisplayEl) totalDisplayEl.textContent = formatMoney(total);
 
   // ✅ Auto-update monto recibido inline
   const inputRecibido = document.getElementById('payment_modal_monto_recibido');

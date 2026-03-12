@@ -26,13 +26,31 @@
 
     </head>
 
-    <body class="font-sans antialiased">
+    @php
+        $isVentasPos = request()->routeIs('ventas.index');
+        $disableUppercase = request()->routeIs('usuarios.*') || request()->routeIs('users.*');
+    @endphp
+
+    <body class="font-sans antialiased {{ $disableUppercase ? 'no-uppercase' : '' }}">
         <div class="min-h-screen bg-gray-100">
-            @include('layouts.navigation')
+            @if($isVentasPos)
+                <button
+                    type="button"
+                    id="ventas-nav-toggle"
+                    data-open="0"
+                    class="fixed top-2 right-2 z-50 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-lg hover:bg-slate-800"
+                >
+                    Abrir menú
+                </button>
+            @endif
+
+            <div id="global-nav" class="{{ $isVentasPos ? 'hidden' : '' }}">
+                @include('layouts.navigation')
+            </div>
 
             <!-- Page Heading -->
             @isset($header)
-                <header class="bg-white shadow">
+                <header id="global-page-header" class="bg-white shadow {{ $isVentasPos ? 'hidden' : '' }}">
                     <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
                         {{ $header }}
                     </div>
@@ -211,5 +229,23 @@
                 });
             })();
         </script>
+        @if($isVentasPos)
+            <script>
+                (() => {
+                    const nav = document.getElementById('global-nav');
+                    const header = document.getElementById('global-page-header');
+                    const btn = document.getElementById('ventas-nav-toggle');
+                    if (!nav || !btn) return;
+
+                    btn.addEventListener('click', () => {
+                        nav.classList.toggle('hidden');
+                        if (header) header.classList.toggle('hidden');
+                        const isOpen = !nav.classList.contains('hidden');
+                        btn.dataset.open = isOpen ? '1' : '0';
+                        btn.textContent = isOpen ? 'Ocultar menú' : 'Abrir menú';
+                    });
+                })();
+            </script>
+        @endif
     </body>
 </html>
