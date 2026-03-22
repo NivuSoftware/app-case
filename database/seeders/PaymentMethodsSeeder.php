@@ -33,6 +33,11 @@ class PaymentMethodsSeeder extends Seeder
                 'codigo_sri' => '16',
                 'activo'     => true,
             ],
+            [
+                'nombre'     => 'CHEQUE',
+                'codigo_sri' => '20',
+                'activo'     => true,
+            ],
         ];
 
         foreach ($methods as $method) {

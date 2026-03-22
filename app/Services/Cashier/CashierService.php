@@ -185,13 +185,11 @@ class CashierService
         int $userId,
         int $saleId,
         ?string $numFactura,
-        float $amount,
-        string $metodo
+        float $amount
     ): void {
-        $m = strtoupper(trim($metodo));
-
-        $isCash = in_array($m, ['EFECTIVO', 'CASH'], true);
-        if (!$isCash) return;
+        if ($amount <= 0) {
+            return;
+        }
 
         $session = $this->getOpenSessionOrFail($cajaId);
 

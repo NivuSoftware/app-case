@@ -848,93 +848,161 @@ class SriInvoiceService
         $el('razonSocialComprador', mb_substr((string) $compradorNombre, 0, 300), $infoFac);
         $el('identificacionComprador', $compradorId, $infoFac);
 
+        $toCents = static fn($value): int => (int) round(((float) ($value ?? 0)) * 100, 0, PHP_ROUND_HALF_UP);
+        $fromCents = static fn(int $cents): float => round($cents / 100, 2);
+
         // Totales
-        $totalSinImpuestos = 0.0;  // base neta sin IVA
-        $totalDescuento = 0.0;    // descuento real sumado
-        $ivaTotal = 0.0;
+        $lineas = [];
+        $totalSinImpuestosCents = 0;
+        $totalDescuentoCents = 0;
+        $ivaTotalCents = 0;
+        $lastTaxableLineIndex = null;
 
-        $totalesIva = [];
-
-        foreach ($sale->items as $it) {
+        foreach ($sale->items as $idx => $it) {
             $qty = (float) $it->cantidad;
+            if ($qty <= 0) {
+                $qty = 1;
+            }
 
             $base = round((float) ($it->total ?? 0), 2); // sin IVA
             $pct = round((float) ($it->iva_porcentaje ?? 0), 2);
             $descGross = round((float) ($it->descuento ?? 0), 2);
             $desc = $pct > 0 ? round($descGross / (1 + ($pct / 100)), 2) : $descGross;
-
-            if ($desc < 0)
+            if ($desc < 0) {
                 $desc = 0;
-            if ($qty <= 0)
-                $qty = 1;
-
-            // subtotal (antes de descuento) derivado de lo persistido (base + desc)
-            $subtotalLinea = round($base + $desc, 2);
-
-            $ivaLinea = round($base * ($pct / 100), 2);
-
-            $totalSinImpuestos += $base;
-            $totalDescuento += $desc;
-            $ivaTotal += $ivaLinea;
-
-            $codPct = $this->sriCodigoPorcentajeIva($pct);
-            if (!isset($totalesIva[$codPct])) {
-                $totalesIva[$codPct] = ['base' => 0.0, 'valor' => 0.0];
             }
-            $totalesIva[$codPct]['base'] += $base;
-            $totalesIva[$codPct]['valor'] += $ivaLinea;
+
+            $baseCents = $toCents($base);
+            $descCents = $toCents($desc);
+            $ivaLineaCents = $toCents(round($base * ($pct / 100), 2));
+            $subtotalLinea = round($base + $desc, 2);
+            $codPct = $this->sriCodigoPorcentajeIva($pct);
+
+            if ($pct > 0) {
+                $lastTaxableLineIndex = $idx;
+            }
+
+            $lineas[] = [
+                'item' => $it,
+                'qty' => $qty,
+                'base_cents' => $baseCents,
+                'desc_cents' => $descCents,
+                'subtotal_linea' => $subtotalLinea,
+                'pct' => $pct,
+                'codigo_porcentaje' => $codPct,
+                'iva_cents' => $ivaLineaCents,
+            ];
+
+            $totalSinImpuestosCents += $baseCents;
+            $totalDescuentoCents += $descCents;
+            $ivaTotalCents += $ivaLineaCents;
         }
 
-        $el('totalSinImpuestos', number_format($totalSinImpuestos, 2, '.', ''), $infoFac);
-        $el('totalDescuento', number_format($totalDescuento, 2, '.', ''), $infoFac);
+        $persistedIvaCents = $toCents($sale->iva ?? 0);
+        $ivaDeltaCents = $persistedIvaCents - $ivaTotalCents;
+
+        if ($ivaDeltaCents !== 0) {
+            if ($lastTaxableLineIndex === null) {
+                throw ValidationException::withMessages([
+                    'payments' => 'No se pudo reconciliar el IVA del XML con el total persistido de la venta.',
+                ]);
+            }
+
+            $adjustedIvaCents = $lineas[$lastTaxableLineIndex]['iva_cents'] + $ivaDeltaCents;
+            if ($adjustedIvaCents < 0) {
+                throw ValidationException::withMessages([
+                    'payments' => 'No se pudo reconciliar el redondeo del IVA para generar el XML del SRI.',
+                ]);
+            }
+
+            $lineas[$lastTaxableLineIndex]['iva_cents'] = $adjustedIvaCents;
+            $ivaTotalCents += $ivaDeltaCents;
+        }
+
+        $totalesIva = [];
+        foreach ($lineas as $linea) {
+            $codPct = $linea['codigo_porcentaje'];
+            if (!isset($totalesIva[$codPct])) {
+                $totalesIva[$codPct] = ['base_cents' => 0, 'valor_cents' => 0];
+            }
+
+            $totalesIva[$codPct]['base_cents'] += $linea['base_cents'];
+            $totalesIva[$codPct]['valor_cents'] += $linea['iva_cents'];
+        }
+
+        $importeTotalCents = $totalSinImpuestosCents + $ivaTotalCents;
+        $persistedTotalCents = $toCents($sale->total ?? 0);
+
+        if ($importeTotalCents !== $persistedTotalCents) {
+            throw ValidationException::withMessages([
+                'payments' => 'No se pudo reconciliar el total del XML con el total persistido de la factura.',
+            ]);
+        }
+
+        $el('totalSinImpuestos', number_format($fromCents($totalSinImpuestosCents), 2, '.', ''), $infoFac);
+        $el('totalDescuento', number_format($fromCents($totalDescuentoCents), 2, '.', ''), $infoFac);
 
         $tci = $el('totalConImpuestos', null, $infoFac);
         foreach ($totalesIva as $cod => $t) {
             $ti = $el('totalImpuesto', null, $tci);
             $el('codigo', '2', $ti);
             $el('codigoPorcentaje', (string) $cod, $ti);
-            $el('baseImponible', number_format($t['base'], 2, '.', ''), $ti);
-            $el('valor', number_format($t['valor'], 2, '.', ''), $ti);
+            $el('baseImponible', number_format($fromCents($t['base_cents']), 2, '.', ''), $ti);
+            $el('valor', number_format($fromCents($t['valor_cents']), 2, '.', ''), $ti);
         }
 
         $el('propina', '0.00', $infoFac);
-        $el('importeTotal', number_format($totalSinImpuestos + $ivaTotal, 2, '.', ''), $infoFac);
+        $el('importeTotal', number_format($fromCents($importeTotalCents), 2, '.', ''), $infoFac);
         $el('moneda', 'DOLAR', $infoFac);
 
         // pagos
-        $paymentMethodName = (string) optional($sale->payments->first()?->paymentMethod)->nombre;
-        $forma = $this->mapFormaPagoSri($paymentMethodName);
+        $payments = $sale->payments ?? collect();
+        if ($payments->isEmpty()) {
+            throw ValidationException::withMessages([
+                'payments' => 'La factura no tiene pagos registrados para generar el XML del SRI.',
+            ]);
+        }
+
+        $paymentsTotalCents = $toCents($payments->sum(fn($payment) => (float) ($payment->monto ?? 0)));
+
+        if ($paymentsTotalCents !== $importeTotalCents) {
+            throw ValidationException::withMessages([
+                'payments' => 'La suma de pagos no coincide con el total de la factura. No se puede generar el XML del SRI.',
+            ]);
+        }
 
         $pagos = $el('pagos', null, $infoFac);
-        $pago = $el('pago', null, $pagos);
-        $el('formaPago', $forma, $pago);
-        $el('total', number_format($totalSinImpuestos + $ivaTotal, 2, '.', ''), $pago);
-        $el('plazo', '0', $pago);
-        $el('unidadTiempo', 'dias', $pago);
+        foreach ($payments as $payment) {
+            $forma = (string) ($payment->paymentMethod?->codigo_sri ?: $this->mapFormaPagoSri((string) ($payment->metodo ?? '')));
+            if ($forma === '') {
+                throw ValidationException::withMessages([
+                    'payments' => 'Uno de los métodos de pago no tiene código SRI válido.',
+                ]);
+            }
+
+            $pago = $el('pago', null, $pagos);
+            $el('formaPago', $forma, $pago);
+            $el('total', number_format((float) ($payment->monto ?? 0), 2, '.', ''), $pago);
+            $el('plazo', '0', $pago);
+            $el('unidadTiempo', 'dias', $pago);
+        }
 
         // detalles
         $detallesNode = $el('detalles', null, $factura);
 
-        foreach ($sale->items as $it) {
+        foreach ($lineas as $linea) {
+            $it = $linea['item'];
             $det = $el('detalle', null, $detallesNode);
 
-            $qty = (float) $it->cantidad;
-            if ($qty <= 0)
-                $qty = 1;
-
-            $base = round((float) ($it->total ?? 0), 2);
-            $pct = round((float) ($it->iva_porcentaje ?? 0), 2);
-            $descGross = round((float) ($it->descuento ?? 0), 2);
-            $desc = $pct > 0 ? round($descGross / (1 + ($pct / 100)), 2) : $descGross;
-            if ($desc < 0)
-                $desc = 0;
-
-            $subtotalLinea = round($base + $desc, 2);
+            $qty = (float) $linea['qty'];
+            $base = $fromCents($linea['base_cents']);
+            $pct = (float) $linea['pct'];
+            $desc = $fromCents($linea['desc_cents']);
+            $subtotalLinea = (float) $linea['subtotal_linea'];
 
             // ✅ precio unitario calculado para que cuadre con subtotal y descuento
             $precioUnitarioXml = $qty > 0 ? round($subtotalLinea / $qty, 6) : 0.0;
-
-            $ivaLinea = round($base * ($pct / 100), 2);
+            $ivaLinea = $fromCents($linea['iva_cents']);
 
             $el('codigoPrincipal', (string) ($it->producto?->codigo_barras ?? $it->producto_id), $det);
             $el('descripcion', mb_substr((string) $it->descripcion, 0, 300), $det);
@@ -949,7 +1017,7 @@ class SriInvoiceService
             $imp = $el('impuesto', null, $imps);
 
             $el('codigo', '2', $imp);
-            $el('codigoPorcentaje', $this->sriCodigoPorcentajeIva($pct), $imp);
+            $el('codigoPorcentaje', $linea['codigo_porcentaje'], $imp);
             $el('tarifa', number_format($pct, 2, '.', ''), $imp);
             $el('baseImponible', number_format($base, 2, '.', ''), $imp);
             $el('valor', number_format($ivaLinea, 2, '.', ''), $imp);

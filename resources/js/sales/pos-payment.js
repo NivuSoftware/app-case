@@ -1,5 +1,9 @@
 import { getCart, getTotals, clearCart } from "./pos-cart";
-import { formatMoney, showSaleAlert, hideSaleAlert } from "./pos-utils";
+import { formatMoney, showSaleAlert } from "./pos-utils";
+
+const CASH_METHODS = ["EFECTIVO", "CASH"];
+let submitting = false;
+let lastSplitValidation = { valid: false, message: "" };
 
 function getIvaEnabled() {
   const el = document.getElementById("toggle_iva_global");
@@ -14,7 +18,7 @@ function getCajaId() {
 }
 
 function buildCashierOpenUrl() {
-  const base = (window.SALES_ROUTES?.cashierOpen) || "/cashier/open";
+  const base = window.SALES_ROUTES?.cashierOpen || "/cashier/open";
   const cajaId = getCajaId();
   const bodegaId = document.getElementById("bodega_id")?.value || null;
 
@@ -34,52 +38,466 @@ function ensureCajaOrRedirect() {
   return true;
 }
 
-
-// function openPaymentModal removed
-// function buildCashierOpenUrl kept helper
-
-// function closePaymentModal removed
-
-function recalcCambio() {
-  const totals = getTotals();
-  const recibido = parseFloat(
-    document.getElementById("payment_modal_monto_recibido")?.value || "0"
-  );
-
-  const total = Number(totals.total || 0);
-  const cambio = recibido - total;
-
-  const span = document.getElementById("payment_modal_cambio");
-  if (span) span.textContent = formatMoney(cambio > 0 ? cambio : 0);
+function toNumber(value) {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  const n = Number.parseFloat(normalized);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function showChangeModal(total, recibido, cambio) {
-  const totalEl = document.getElementById("change_total");
-  const recEl = document.getElementById("change_recibido");
-  const camEl = document.getElementById("change_cambio");
+function toCents(value) {
+  return Math.round(toNumber(value) * 100);
+}
+
+function fromCents(cents) {
+  return cents / 100;
+}
+
+function isCashMethod(method) {
+  return CASH_METHODS.includes(String(method || "").trim().toUpperCase());
+}
+
+function getSimpleMethodSelect() {
+  return document.getElementById("payment_modal_metodo");
+}
+
+function getSimpleMethodData() {
+  const select = getSimpleMethodSelect();
+  const option = select?.selectedOptions?.[0] || null;
+
+  return {
+    method: option?.value?.trim() || "",
+    paymentMethodId: option?.dataset?.id ? Number(option.dataset.id) : null,
+    isCash: isCashMethod(option?.value || ""),
+  };
+}
+
+function getSaleObservations() {
+  return document.getElementById("payment_modal_observaciones")?.value?.trim() || null;
+}
+
+function getClientContext() {
+  const emailSelect = document.getElementById("cliente_email");
+  const selectedOpt = emailSelect?.selectedOptions?.[0];
+
+  return {
+    clientId: document.getElementById("client_id")?.value || null,
+    clientEmailId: emailSelect && emailSelect.value ? Number(emailSelect.value) : null,
+    emailDestino: selectedOpt && selectedOpt.value ? selectedOpt.text : null,
+    clientNameUI:
+      document.getElementById("cliente_nombre")?.textContent?.trim()?.toUpperCase() || "",
+    clientIdentUI:
+      document.getElementById("cliente_identificacion")?.textContent?.trim() || "",
+  };
+}
+
+function validateClientForAmount(totalUi) {
+  const { clientId, clientNameUI, clientIdentUI } = getClientContext();
+  const isCF =
+    !clientId ||
+    clientIdentUI === "9999999999999" ||
+    clientNameUI === "CONSUMIDOR FINAL";
+
+  if (totalUi >= 50 && isCF) {
+    return "Para ventas de $50 o más, es obligatorio ingresar un cliente con datos y no Consumidor Final.";
+  }
+
+  return null;
+}
+
+function recalcSimpleCambio() {
+  const total = Number(getTotals().total || 0);
+  const receivedInput = document.getElementById("payment_modal_monto_recibido");
+  const changeEl = document.getElementById("payment_modal_cambio");
+  const { isCash } = getSimpleMethodData();
+
+  if (!changeEl) return;
+
+  if (!isCash) {
+    changeEl.textContent = formatMoney(0);
+    return;
+  }
+
+  const received = toNumber(receivedInput?.value);
+  changeEl.textContent = formatMoney(Math.max(0, received - total));
+}
+
+function syncSimplePaymentToTotal(total) {
+  const receivedInput = document.getElementById("payment_modal_monto_recibido");
+  if (!receivedInput) return;
+
+  if (getSimpleMethodData().isCash && document.activeElement !== receivedInput) {
+    receivedInput.value = Number(total || 0).toFixed(2);
+  }
+
+  recalcSimpleCambio();
+}
+
+function buildSimplePayments(fechaVenta, totalUi) {
+  const { method, paymentMethodId, isCash } = getSimpleMethodData();
+  if (!method || !paymentMethodId) {
+    throw new Error("Debes seleccionar un método de pago.");
+  }
+
+  const payment = {
+    metodo: method,
+    payment_method_id: paymentMethodId,
+    monto: Number(totalUi || 0).toFixed(2),
+    referencia: document.getElementById("payment_modal_referencia")?.value?.trim() || null,
+    observaciones: getSaleObservations(),
+    fecha_pago: fechaVenta,
+  };
+
+  if (isCash) {
+    const received = toNumber(document.getElementById("payment_modal_monto_recibido")?.value);
+    if (received < totalUi) {
+      throw new Error("El monto recibido no puede ser menor al total de la venta.");
+    }
+    payment.monto_recibido = received.toFixed(2);
+  }
+
+  return [payment];
+}
+
+function getSplitModal() {
+  return document.getElementById("split-payment-modal");
+}
+
+function openSplitModal() {
+  updateSplitModalHeader();
+  resetSplitRows();
+  getSplitModal()?.classList.remove("hidden");
+}
+
+function closeSplitModal() {
+  getSplitModal()?.classList.add("hidden");
+}
+
+function updateSplitModalHeader() {
+  const totalEl = document.getElementById("split_payment_total");
+  const emailEl = document.getElementById("split_payment_email_preview");
+  const total = Number(getTotals().total || 0);
+  const { emailDestino } = getClientContext();
 
   if (totalEl) totalEl.textContent = formatMoney(total);
-  if (recEl) recEl.textContent = formatMoney(recibido);
-  if (camEl) camEl.textContent = formatMoney(cambio > 0 ? cambio : 0);
-
-  const modal = document.getElementById("change-modal");
-  if (modal) modal.classList.remove("hidden");
+  if (emailEl) emailEl.textContent = emailDestino || "(sin correo seleccionado)";
 }
 
-function closeChangeModal() {
-  const modal = document.getElementById("change-modal");
-  if (modal) modal.classList.add("hidden");
+function getSplitRowsContainer() {
+  return document.getElementById("split_payment_rows");
 }
 
-let submitting = false;
+function getSplitTemplate() {
+  return document.getElementById("split-payment-row-template");
+}
 
-async function submitSaleFromModal() {
+function getSplitRows() {
+  return Array.from(
+    getSplitRowsContainer()?.querySelectorAll("[data-split-payment-row]") || []
+  );
+}
+
+function getSplitMethodCount() {
+  const template = getSplitTemplate();
+  const select = template?.content?.querySelector("[data-split-payment-method]");
+  if (!select) return 0;
+
+  return Array.from(select.options).filter((option) => option.value.trim() !== "").length;
+}
+
+function getSplitRowParts(row) {
+  return {
+    method: row.querySelector("[data-split-payment-method]"),
+    amount: row.querySelector("[data-split-payment-amount]"),
+    reference: row.querySelector("[data-split-payment-reference]"),
+    observations: row.querySelector("[data-split-payment-observations]"),
+    remove: row.querySelector("[data-remove-split-payment-row]"),
+  };
+}
+
+function getSplitRowState(row) {
+  const parts = getSplitRowParts(row);
+  const option = parts.method?.selectedOptions?.[0] || null;
+  const method = option?.value?.trim() || "";
+  const paymentMethodId = option?.dataset?.id ? Number(option.dataset.id) : null;
+  const amountCents = toCents(parts.amount?.value);
+  const receivedCents = amountCents;
+
+  return {
+    row,
+    parts,
+    method,
+    paymentMethodId,
+    amountCents,
+    receivedCents,
+    isCash: isCashMethod(method),
+  };
+}
+
+function pickDefaultSplitMethod(existingMethods = [], preferred = null) {
+  const template = getSplitTemplate();
+  const select = template?.content?.querySelector("[data-split-payment-method]");
+  if (!select) return "";
+
+  const existing = new Set(existingMethods.map((method) => method.toUpperCase()));
+  const options = Array.from(select.options).filter((option) => option.value.trim() !== "");
+
+  if (preferred) {
+    const preferredOption = options.find(
+      (option) => option.value.trim().toUpperCase() === preferred.toUpperCase()
+    );
+    if (preferredOption) return preferredOption.value;
+  }
+
+  const cashOption = options.find(
+    (option) => option.value.trim().toUpperCase() === "EFECTIVO"
+  );
+  if (cashOption && !existing.has("EFECTIVO")) {
+    return cashOption.value;
+  }
+
+  return (
+    options.find((option) => !existing.has(option.value.trim().toUpperCase()))?.value || ""
+  );
+}
+
+function addSplitRow(preferredMethod = null) {
+  const container = getSplitRowsContainer();
+  const template = getSplitTemplate();
+  if (!container || !template) return null;
+
+  const existingMethods = getSplitRows()
+    .map((row) => getSplitRowState(row).method)
+    .filter(Boolean);
+
+  const fragment = template.content.cloneNode(true);
+  const row = fragment.querySelector("[data-split-payment-row]");
+  container.appendChild(fragment);
+
+  const parts = getSplitRowParts(row);
+  if (parts.method) {
+    parts.method.value = pickDefaultSplitMethod(existingMethods, preferredMethod);
+  }
+
+  updateSplitRowUI(row);
+  updateSplitControls();
+  refreshSplitSummary();
+  return row;
+}
+
+function resetSplitRows() {
+  const container = getSplitRowsContainer();
+  if (!container) return;
+
+  container.innerHTML = "";
+  addSplitRow(getSimpleMethodData().method || "EFECTIVO");
+  syncSingleSplitToTotal(Number(getTotals().total || 0));
+  refreshSplitSummary();
+}
+
+function updateSplitControls() {
+  const rows = getSplitRows();
+  const maxMethods = getSplitMethodCount();
+
+  rows.forEach((row) => {
+    const { remove } = getSplitRowParts(row);
+    if (remove) {
+      remove.disabled = rows.length === 1;
+      remove.classList.toggle("opacity-50", rows.length === 1);
+      remove.classList.toggle("cursor-not-allowed", rows.length === 1);
+    }
+  });
+
+  const addButton = document.getElementById("btn-add-split-payment-row");
+  if (addButton) {
+    const disable = maxMethods > 0 && rows.length >= maxMethods;
+    addButton.disabled = disable;
+    addButton.classList.toggle("opacity-50", disable);
+    addButton.classList.toggle("cursor-not-allowed", disable);
+  }
+}
+
+function updateSplitRowUI(row) {
+  return getSplitRowState(row);
+}
+
+function setStatusClasses(element, tone) {
+  if (!element) return;
+
+  element.classList.remove(
+    "text-emerald-600",
+    "text-amber-600",
+    "text-rose-600",
+    "text-slate-600",
+    "text-slate-800"
+  );
+
+  if (tone === "success") {
+    element.classList.add("text-emerald-600");
+    return;
+  }
+
+  if (tone === "danger") {
+    element.classList.add("text-rose-600");
+    return;
+  }
+
+  if (tone === "muted") {
+    element.classList.add("text-slate-600");
+    return;
+  }
+
+  element.classList.add("text-amber-600");
+}
+
+function updateSplitConfirmButton(isValid) {
+  const button = document.getElementById("btn-confirm-split-payment");
+  if (!button) return;
+
+  button.disabled = submitting || !isValid;
+  button.classList.toggle("opacity-50", button.disabled);
+  button.classList.toggle("cursor-not-allowed", button.disabled);
+}
+
+function refreshSplitSummary() {
+  const totalCents = toCents(getTotals().total || 0);
+  const rows = getSplitRows();
+
+  let declaredCents = 0;
+  let cashRows = 0;
+  let duplicateMethod = false;
+  let incomplete = rows.length === 0;
+  const seenMethods = new Set();
+
+  rows.forEach((row) => {
+    updateSplitRowUI(row);
+
+    const state = getSplitRowState(row);
+    if (!state.method || !state.paymentMethodId) {
+      incomplete = true;
+    }
+
+    const methodKey = state.method.toUpperCase();
+    if (state.method) {
+      if (seenMethods.has(methodKey)) {
+        duplicateMethod = true;
+      }
+      seenMethods.add(methodKey);
+    }
+
+    if (state.amountCents <= 0) {
+      incomplete = true;
+    } else {
+      declaredCents += state.amountCents;
+    }
+
+    if (state.isCash) {
+      cashRows += 1;
+    }
+  });
+
+  const balanceCents = totalCents - declaredCents;
+  const totalDeclaredEl = document.getElementById("split_payments_total_declared");
+  const balanceEl = document.getElementById("split_payments_balance");
+  const statusEl = document.getElementById("split_payments_status_message");
+
+  if (totalDeclaredEl) {
+    totalDeclaredEl.textContent = formatMoney(fromCents(declaredCents));
+  }
+
+  if (balanceEl) {
+    balanceEl.textContent = formatMoney(Math.abs(fromCents(balanceCents)));
+  }
+
+  let message = "Agrega y completa los pagos para emitir la factura.";
+  let tone = "warning";
+  let valid = false;
+
+  if (rows.length === 0) {
+    message = "Debes agregar al menos un método de pago.";
+  } else if (duplicateMethod) {
+    message = "No puedes repetir el mismo método de pago en una factura.";
+    tone = "danger";
+  } else if (cashRows > 1) {
+    message = "Solo se permite una línea de pago en efectivo por factura.";
+    tone = "danger";
+  } else if (incomplete) {
+    message = "Completa método y monto en todas las líneas de pago.";
+  } else if (balanceCents > 0) {
+    message = `Falta declarar ${formatMoney(fromCents(balanceCents))} para completar la factura.`;
+  } else if (balanceCents < 0) {
+    message = `Los pagos exceden el total por ${formatMoney(fromCents(Math.abs(balanceCents)))}.`;
+    tone = "danger";
+  } else {
+    message = "Pagos completos. La factura está lista para emitirse.";
+    tone = "success";
+    valid = true;
+  }
+
+  if (statusEl) {
+    statusEl.textContent = message;
+    setStatusClasses(statusEl, tone);
+  }
+
+  if (balanceEl) {
+    setStatusClasses(
+      balanceEl,
+      balanceCents === 0 ? "success" : balanceCents < 0 ? "danger" : "warning"
+    );
+  }
+
+  lastSplitValidation = { valid, message };
+  updateSplitConfirmButton(valid);
+  updateSplitControls();
+
+  return lastSplitValidation;
+}
+
+function syncSingleSplitToTotal(total) {
+  const rows = getSplitRows();
+  if (rows.length !== 1) return;
+
+  const state = getSplitRowState(rows[0]);
+  const { amount } = state.parts;
+
+  if (amount && document.activeElement !== amount) {
+    amount.value = Number(total || 0).toFixed(2);
+  }
+
+  updateSplitRowUI(rows[0]);
+}
+
+function buildSplitPayments(fechaVenta) {
+  return getSplitRows().map((row) => {
+    const state = getSplitRowState(row);
+
+    const payment = {
+      metodo: state.method,
+      payment_method_id: state.paymentMethodId,
+      monto: fromCents(state.amountCents).toFixed(2),
+      referencia: state.parts.reference?.value?.trim() || null,
+      observaciones: state.parts.observations?.value?.trim() || null,
+      fecha_pago: fechaVenta,
+    };
+
+    if (state.isCash) {
+      payment.monto_recibido = fromCents(state.receivedCents || state.amountCents).toFixed(2);
+    }
+
+    return payment;
+  });
+}
+
+async function submitSaleWithPayments(payments) {
   if (!ensureCajaOrRedirect()) return;
   if (submitting) return;
-  submitting = true;
 
-  const btnConfirm = document.getElementById("btn-confirm-payment");
-  if (btnConfirm) btnConfirm.disabled = true;
+  submitting = true;
+  updateSplitConfirmButton(lastSplitValidation.valid);
+  const simpleBtn = document.getElementById("btn-confirm-payment");
+  if (simpleBtn) {
+    simpleBtn.disabled = true;
+    simpleBtn.classList.add("opacity-50", "cursor-not-allowed");
+  }
 
   try {
     const cart = getCart();
@@ -88,87 +506,31 @@ async function submitSaleFromModal() {
       return;
     }
 
-    // Totales SOLO para UI/validación de recibido (backend recalcula y guarda)
     const totals = getTotals();
     const totalUi = Number(totals.total || 0);
+    const clientValidationError = validateClientForAmount(totalUi);
+    if (clientValidationError) {
+      showSaleAlert(clientValidationError, true);
+      return;
+    }
 
     const ivaEnabled = getIvaEnabled();
-
     const bodegaId = document.getElementById("bodega_id")?.value;
     const fechaVenta = document.getElementById("fecha_venta")?.value;
     const tipoDocumento =
       document.getElementById("tipo_documento")?.value || "FACTURA";
     const numFactura = document.getElementById("num_factura")?.value || null;
-
-    // Nota: sale_observaciones fue removido, usamos payment.observaciones como general
-    const observacionesVenta =
-      document.getElementById("payment_modal_observaciones")?.value || null;
+    const observacionesVenta = getSaleObservations();
+    const { clientId, clientEmailId, emailDestino } = getClientContext();
 
     if (!bodegaId || !fechaVenta) {
       showSaleAlert("Completa los datos de la venta.", true);
       return;
     }
 
-    const recibido = parseFloat(
-      document.getElementById("payment_modal_monto_recibido")?.value || "0"
-    );
-
-    // Validación: recibido vs total UI
-    if (recibido < totalUi) {
-      showSaleAlert("El monto recibido no puede ser menor al total. Total: " + totalUi, true);
-      submitting = false; // Reset submitting
-      if (btnConfirm) btnConfirm.disabled = false;
-      return;
-    }
-
-    const metodoSelect = document.getElementById("payment_modal_metodo");
-    const metodo = metodoSelect?.value;
-    const paymentMethodId = metodoSelect?.selectedOptions[0]?.dataset.id || null;
-
-    const referencia =
-      document.getElementById("payment_modal_referencia")?.value || null;
-
-    const observacionesPago =
-      document.getElementById("payment_modal_observaciones")?.value || null;
-
-    const clientId = document.getElementById("client_id")?.value || null;
-
-    const emailSelect = document.getElementById("cliente_email");
-    const selectedOpt = emailSelect?.selectedOptions?.[0];
-
-    const clientEmailId = emailSelect && emailSelect.value ? emailSelect.value : null;
-    const emailDestino = selectedOpt && selectedOpt.value ? selectedOpt.text : null;
-
-    // VALIDACIÓN CLIENTE: Si es >= 50, no puede ser consumidor final
-    // Buscamos info del cliente en el DOM (seteada por pos-client.js)
-    const clientInputEl = document.getElementById("client_id");
-
-    // Obtenemos los data-atributes para saber "quién" es el cliente actual segun el UI
-    // Si no hay client_id, el script pos-client asume CF, pero acá validamos explícitamente.
-    // Ojo: cuando seleccionas un cliente real, el value se llena. Si es CF el value podría estar vacío o ser el ID del CF.
-    // Usaremos la referencia del nombre/ident en el UI para estar seguros.
-    const clientNameUI = document.getElementById("cliente_nombre")?.textContent?.trim()?.toUpperCase() || "";
-    const clientIdentUI = document.getElementById("cliente_identificacion")?.textContent?.trim() || "";
-
-    // Lógica para detectar CF en frontend
-    const isCF =
-      !clientId || // Si no tiene ID seleccionado es el default
-      clientIdentUI === '9999999999999' ||
-      clientNameUI === 'CONSUMIDOR FINAL';
-
-    if (totalUi >= 50 && isCF) {
-      showSaleAlert("Para ventas de $50 o más, es OBLIGATORIO ingresar un cliente con datos (no Consumidor Final).", true);
-      submitting = false;
-      if (btnConfirm) btnConfirm.disabled = false;
-      return;
-    }
-
-
-    const cajaId = getCajaId();
-
     const payload = {
-      caja_id: cajaId,
-      client_email_id: clientEmailId ? Number(clientEmailId) : null,
+      caja_id: getCajaId(),
+      client_email_id: clientEmailId,
       email_destino: emailDestino,
       client_id: clientId || null,
       user_id: window.AUTH_USER_ID || null,
@@ -177,18 +539,15 @@ async function submitSaleFromModal() {
       tipo_documento: tipoDocumento,
       num_factura: numFactura,
       observaciones: observacionesVenta,
-
       iva_enabled: ivaEnabled,
-
       items: cart.map((item) => {
         const qty = Number(item.cantidad) || 1;
-
         const lineSubtotal =
           Number(item.lineSubtotal ?? 0) ||
           (Number(item.total ?? 0) + Number(item.descuento ?? 0));
 
         const precioEfectivo = qty > 0
-          ? (lineSubtotal / qty)
+          ? lineSubtotal / qty
           : Number(item.precio_unitario ?? 0);
 
         return {
@@ -201,31 +560,11 @@ async function submitSaleFromModal() {
           percha_id: item.percha_id ?? null,
         };
       }),
-
-
-      payment: {
-        metodo,
-        payment_method_id: paymentMethodId,
-        monto_recibido: Number(recibido || 0).toFixed(2),
-        referencia,
-        observaciones: observacionesPago,
-        fecha_pago: fechaVenta,
-      },
-
-      email_destino: emailDestino,
+      payments,
     };
 
     const routes = window.SALES_ROUTES || {};
-    let url = routes.store || "/api/ventas";
-
-    if (!url) {
-      showSaleAlert(
-        "Ruta de venta no configurada (ni siquiera fallback).",
-        true
-      );
-      return;
-    }
-
+    const url = routes.store || "/api/ventas";
     const csrfToken =
       window.CSRF_TOKEN ||
       document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ||
@@ -245,7 +584,6 @@ async function submitSaleFromModal() {
 
     if (res.status === 422) {
       const data = await res.json();
-
       const msg = (data?.message || "").toLowerCase();
       const hasCajaError =
         msg.includes("no hay caja abierta") ||
@@ -257,10 +595,10 @@ async function submitSaleFromModal() {
         return;
       }
 
-      showSaleAlert(data?.message || "Error de validación en la venta.", true);
+      const firstError = Object.values(data?.errors || {}).flat().find(Boolean);
+      showSaleAlert(firstError || data?.message || "Error de validación en la venta.", true);
       return;
     }
-
 
     if (!res.ok) {
       showSaleAlert("Ocurrió un error al registrar la venta.", true);
@@ -268,16 +606,10 @@ async function submitSaleFromModal() {
     }
 
     const data = await res.json();
-
-    showSaleAlert(data.message || "Venta registrada correctamente.");
-
-    // OJO: el backend devuelve el total real guardado (incluye IVA exacto)
     const sale = data?.data;
     const saleId = sale?.id;
 
-    // Total REAL desde backend (no del UI)
-    const totalReal = Number(sale?.total ?? totalUi);
-    const cambioReal = recibido - totalReal;
+    showSaleAlert(data.message || "Venta registrada correctamente.");
 
     if (saleId) {
       const frame = document.getElementById("ticketPrintFrame");
@@ -286,42 +618,123 @@ async function submitSaleFromModal() {
       }
     }
 
-    // closePaymentModal() removed
-    showChangeModal(totalReal, recibido, cambioReal);
-
-    // Limpiar carrito y formularios
     clearCart();
+    const refInput = document.getElementById("payment_modal_referencia");
+    if (refInput) refInput.value = "";
+    const obsInput = document.getElementById("payment_modal_observaciones");
+    if (obsInput) obsInput.value = "";
 
-    // sale_observaciones removed
-    const refPago = document.getElementById("payment_modal_referencia");
-    if (refPago) refPago.value = "";
-
-    const obsPago = document.getElementById("payment_modal_observaciones");
-    if (obsPago) obsPago.value = "";
-  } catch (e) {
-    console.error(e);
+    closeSplitModal();
+    resetSplitRows();
+  } catch (error) {
+    console.error(error);
     showSaleAlert("Error de comunicación con el servidor.", true);
   } finally {
     submitting = false;
-    if (btnConfirm) btnConfirm.disabled = false;
+    updateSplitConfirmButton(lastSplitValidation.valid);
+    if (simpleBtn) {
+      simpleBtn.disabled = false;
+      simpleBtn.classList.remove("opacity-50", "cursor-not-allowed");
+    }
   }
 }
 
+function submitSimpleSale() {
+  const totalUi = Number(getTotals().total || 0);
+  const fechaVenta = document.getElementById("fecha_venta")?.value;
+
+  try {
+    const payments = buildSimplePayments(fechaVenta, totalUi);
+    submitSaleWithPayments(payments);
+  } catch (error) {
+    showSaleAlert(error.message || "No se pudo registrar el pago.", true);
+  }
+}
+
+function submitSplitSale() {
+  const validation = refreshSplitSummary();
+  if (!validation.valid) {
+    showSaleAlert(validation.message, true);
+    return;
+  }
+
+  const fechaVenta = document.getElementById("fecha_venta")?.value;
+  submitSaleWithPayments(buildSplitPayments(fechaVenta));
+}
+
 export function initPayment() {
-  // btn-open-payment-modal listener removed, btn-confirm-payment is now the trigger
+  const simpleMethodSelect = getSimpleMethodSelect();
+  const simpleReceivedInput = document.getElementById("payment_modal_monto_recibido");
+  const splitModal = getSplitModal();
+  const splitContainer = getSplitRowsContainer();
+  const splitOpenButton = document.getElementById("btn-open-split-payment");
+  const splitAddButton = document.getElementById("btn-add-split-payment-row");
+  const splitConfirmButton = document.getElementById("btn-confirm-split-payment");
+  const simpleConfirmButton = document.getElementById("btn-confirm-payment");
 
-  // payment-modal close listeners removed
+  if (simpleMethodSelect) {
+    simpleMethodSelect.addEventListener("change", recalcSimpleCambio);
+  }
 
-  const changeModal = document.getElementById("change-modal");
-  if (changeModal) {
-    changeModal.querySelectorAll("[data-change-close]").forEach((btn) => {
-      btn.addEventListener("click", closeChangeModal);
+  if (simpleReceivedInput) {
+    simpleReceivedInput.addEventListener("input", recalcSimpleCambio);
+  }
+
+  if (splitOpenButton) {
+    splitOpenButton.addEventListener("click", openSplitModal);
+  }
+
+  if (splitModal) {
+    splitModal.querySelectorAll("[data-split-close]").forEach((button) => {
+      button.addEventListener("click", closeSplitModal);
     });
   }
 
-  const inputRecibido = document.getElementById("payment_modal_monto_recibido");
-  if (inputRecibido) inputRecibido.addEventListener("input", recalcCambio);
+  if (splitAddButton) {
+    splitAddButton.addEventListener("click", () => addSplitRow());
+  }
 
-  const btnConfirm = document.getElementById("btn-confirm-payment");
-  if (btnConfirm) btnConfirm.addEventListener("click", submitSaleFromModal);
+  if (splitContainer) {
+    splitContainer.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("[data-remove-split-payment-row]");
+      if (!removeButton) return;
+
+      const row = removeButton.closest("[data-split-payment-row]");
+      if (!row || getSplitRows().length === 1) return;
+
+      row.remove();
+      refreshSplitSummary();
+    });
+
+    splitContainer.addEventListener("change", (event) => {
+      if (event.target.closest("[data-split-payment-row]")) {
+        refreshSplitSummary();
+      }
+    });
+
+    splitContainer.addEventListener("input", (event) => {
+      const row = event.target.closest("[data-split-payment-row]");
+      if (!row) return;
+      refreshSplitSummary();
+    });
+  }
+
+  if (simpleConfirmButton) {
+    simpleConfirmButton.addEventListener("click", submitSimpleSale);
+  }
+
+  if (splitConfirmButton) {
+    splitConfirmButton.addEventListener("click", submitSplitSale);
+  }
+
+  window.addEventListener("pos:totals-updated", (event) => {
+    const total = Number(event.detail?.total || 0);
+    syncSimplePaymentToTotal(total);
+    updateSplitModalHeader();
+    syncSingleSplitToTotal(total);
+    refreshSplitSummary();
+  });
+
+  recalcSimpleCambio();
+  resetSplitRows();
 }

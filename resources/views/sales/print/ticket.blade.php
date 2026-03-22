@@ -143,11 +143,19 @@
     <div class="row"><div>IVA</div><div class="right">${{ number_format($sale->iva, 2) }}</div></div>
     <div class="row bold" style="font-size:14px;"><div>TOTAL</div><div class="right">${{ number_format($sale->total, 2) }}</div></div>
 
-    @php $p = $sale->payments->first(); @endphp
     <div class="hr"></div>
-    <div class="row small"><div>Método de pago</div><div class="right">{{ $p->metodo ?? '-' }}</div></div>
-    <div class="row small"><div>Recibido</div><div class="right">${{ number_format($p->monto_recibido ?? 0, 2) }}</div></div>
-    <div class="row small"><div>Cambio</div><div class="right">${{ number_format($p->cambio ?? 0, 2) }}</div></div>
+    @forelse(($sale->payments ?? collect()) as $payment)
+      <div class="row small"><div>Método de pago</div><div class="right">{{ $payment->paymentMethod?->nombre ?? $payment->metodo ?? '-' }}</div></div>
+      <div class="row small"><div>Monto</div><div class="right">${{ number_format((float) ($payment->monto ?? 0), 2) }}</div></div>
+      @if(!is_null($payment->monto_recibido))
+        <div class="row small"><div>Recibido</div><div class="right">${{ number_format((float) ($payment->monto_recibido ?? 0), 2) }}</div></div>
+      @endif
+      @if(!is_null($payment->cambio))
+        <div class="row small"><div>Cambio</div><div class="right">${{ number_format((float) ($payment->cambio ?? 0), 2) }}</div></div>
+      @endif
+    @empty
+      <div class="row small"><div>Método de pago</div><div class="right">-</div></div>
+    @endforelse
     <div class="row small"> <div>Atendido por</div> <div class="right">{{ $atendidoPor }}</div></div>
     <div class="hr"></div>
 

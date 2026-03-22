@@ -3,6 +3,7 @@
 namespace App\Services\Sales;
 
 use App\Models\Product\Product;
+use App\Models\Sales\PaymentMethod;
 use App\Repositories\Sales\SaleRepository;
 use App\Services\Inventory\InventoryService;
 use Illuminate\Support\Facades\DB;
@@ -46,7 +47,7 @@ class SaleService
             $this->cashier->getOpenSessionOrFail($cajaId);
 
             $items = $data['items'] ?? [];
-            $payment = $data['payment'] ?? null;
+            $payments = $this->normalizePayments($data);
 
             if (empty($items)) {
                 throw ValidationException::withMessages([
@@ -54,9 +55,9 @@ class SaleService
                 ]);
             }
 
-            if (!$payment) {
+            if (empty($payments)) {
                 throw ValidationException::withMessages([
-                    'payment' => 'Debe registrar al menos un pago.',
+                    'payments' => 'Debe registrar al menos un pago.',
                 ]);
             }
 
@@ -249,30 +250,19 @@ class SaleService
                 ]);
             }
 
-            // 3) Pago
-            $montoRecibido = (float) ($payment['monto_recibido'] ?? $total);
-            $cambio = $montoRecibido - $total;
+            // 3) Pagos
+            $resolvedPayments = $this->resolvePayments(
+                $payments,
+                $totalCents,
+                $data['user_id'],
+                $data['fecha_venta'] ?? null,
+                $toCents,
+                $fromCents
+            );
 
-            if ($montoRecibido < $total) {
-                throw ValidationException::withMessages([
-                    'payment.monto_recibido' => 'El monto recibido no puede ser menor al total de la venta.',
-                ]);
+            foreach ($resolvedPayments['records'] as $paymentRecord) {
+                $this->sales->addPayment($sale, $paymentRecord);
             }
-
-            $metodoPago = (string) ($payment['metodo'] ?? '');
-            $metodoPagoNorm = strtoupper(trim($metodoPago));
-
-            $this->sales->addPayment($sale, [
-                'fecha_pago' => $payment['fecha_pago'] ?? now(),
-                'monto' => $total,
-                'metodo' => $metodoPago,
-                'payment_method_id' => $payment['payment_method_id'] ?? null,
-                'referencia' => $payment['referencia'] ?? null,
-                'observaciones' => $payment['observaciones'] ?? null,
-                'monto_recibido' => $montoRecibido,
-                'cambio' => $cambio,
-                'usuario_id' => $data['user_id'],
-            ]);
 
             // 4) Marco como pagada
             $this->sales->updateEstado($sale, 'pagada');
@@ -302,17 +292,16 @@ class SaleService
                 }
             }
 
-            // 7) Caja (si es efectivo)
-            $isCash = in_array($metodoPagoNorm, ['EFECTIVO', 'CASH'], true);
+            // 7) Caja (solo por la porcion en efectivo)
+            $cashPortion = (float) ($resolvedPayments['cash_amount'] ?? 0);
 
-            if ($isCash) {
+            if ($cashPortion > 0) {
                 $this->cashier->registerSaleIncome(
                     $cajaId,
                     (int) $data['user_id'],
                     (int) $sale->id,
                     $sale->num_factura,
-                    (float) $total,
-                    $metodoPagoNorm
+                    $cashPortion
                 );
             }
 
@@ -332,6 +321,159 @@ class SaleService
     public function getById(int $id): ?Sale
     {
         return $this->sales->findById($id);
+    }
+
+    private function normalizePayments(array $data): array
+    {
+        $payments = $data['payments'] ?? null;
+        if (is_array($payments) && !empty($payments)) {
+            return array_values($payments);
+        }
+
+        $payment = $data['payment'] ?? null;
+        if (is_array($payment) && !empty($payment)) {
+            return [$payment];
+        }
+
+        return [];
+    }
+
+    private function resolvePayments(
+        array $payments,
+        int $totalCents,
+        int|string $userId,
+        mixed $fechaVenta,
+        callable $toCents,
+        callable $fromCents
+    ): array {
+        $paymentMethodIds = collect($payments)
+            ->pluck('payment_method_id')
+            ->filter()
+            ->map(fn($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $paymentMethods = PaymentMethod::query()
+            ->whereIn('id', $paymentMethodIds)
+            ->get()
+            ->keyBy('id');
+
+        $resolved = [];
+        $seenMethods = [];
+        $declaredCents = 0;
+        $cashAmountCents = 0;
+        $cashRows = 0;
+
+        foreach ($payments as $idx => $payment) {
+            $paymentMethodId = (int) ($payment['payment_method_id'] ?? 0);
+            $paymentMethod = $paymentMethodIds !== []
+                ? $paymentMethods->get($paymentMethodId)
+                : null;
+
+            if (!$paymentMethod) {
+                throw ValidationException::withMessages([
+                    "payments.{$idx}.payment_method_id" => 'Debes seleccionar un método de pago válido.',
+                ]);
+            }
+
+            $metodo = trim((string) ($paymentMethod->nombre ?? $payment['metodo'] ?? ''));
+            if ($metodo === '') {
+                throw ValidationException::withMessages([
+                    "payments.{$idx}.metodo" => 'El método de pago es obligatorio.',
+                ]);
+            }
+
+            $metodoKey = strtoupper($metodo);
+            if (isset($seenMethods[$metodoKey])) {
+                throw ValidationException::withMessages([
+                    "payments.{$idx}.metodo" => 'No puedes repetir el mismo método de pago en la factura.',
+                ]);
+            }
+            $seenMethods[$metodoKey] = true;
+
+            $rawMonto = $payment['monto'] ?? null;
+            if (($rawMonto === null || $rawMonto === '') && count($payments) === 1) {
+                $rawMonto = $fromCents($totalCents);
+            }
+
+            $montoCents = $toCents($rawMonto);
+            if ($montoCents <= 0) {
+                throw ValidationException::withMessages([
+                    "payments.{$idx}.monto" => 'El monto del pago debe ser mayor a 0.',
+                ]);
+            }
+
+            $isCash = $this->isCashMethod($metodo);
+            $montoRecibido = null;
+            $cambio = null;
+
+            if ($isCash) {
+                $cashRows++;
+                if ($cashRows > 1) {
+                    throw ValidationException::withMessages([
+                        "payments.{$idx}.metodo" => 'Solo se permite una línea de pago en efectivo por factura.',
+                    ]);
+                }
+
+                $montoRecibidoCents = $toCents($payment['monto_recibido'] ?? 0);
+                if ($montoRecibidoCents < $montoCents) {
+                    throw ValidationException::withMessages([
+                        "payments.{$idx}.monto_recibido" => 'El monto recibido en efectivo no puede ser menor al monto declarado para efectivo.',
+                    ]);
+                }
+
+                $montoRecibido = $fromCents($montoRecibidoCents);
+                $cambio = $fromCents($montoRecibidoCents - $montoCents);
+                $cashAmountCents += $montoCents;
+            } else {
+                $rawRecibido = $payment['monto_recibido'] ?? null;
+                if ($rawRecibido !== null && trim((string) $rawRecibido) !== '') {
+                    throw ValidationException::withMessages([
+                        "payments.{$idx}.monto_recibido" => 'Solo el pago en efectivo puede tener monto recibido.',
+                    ]);
+                }
+            }
+
+            $declaredCents += $montoCents;
+
+            $resolved[] = [
+                'fecha_pago' => $payment['fecha_pago'] ?? ($fechaVenta ?: now()),
+                'monto' => $fromCents($montoCents),
+                'metodo' => $metodo,
+                'payment_method_id' => $paymentMethodId,
+                'referencia' => $this->nullableString($payment['referencia'] ?? null),
+                'observaciones' => $this->nullableString($payment['observaciones'] ?? null),
+                'monto_recibido' => $montoRecibido,
+                'cambio' => $cambio,
+                'usuario_id' => (int) $userId,
+            ];
+        }
+
+        if ($declaredCents !== $totalCents) {
+            $expected = number_format($fromCents($totalCents), 2, '.', '');
+            $declared = number_format($fromCents($declaredCents), 2, '.', '');
+
+            throw ValidationException::withMessages([
+                'payments' => "La suma de los pagos debe completar exactamente el total de la factura. Total: {$expected}. Declarado: {$declared}.",
+            ]);
+        }
+
+        return [
+            'records' => $resolved,
+            'cash_amount' => $fromCents($cashAmountCents),
+        ];
+    }
+
+    private function isCashMethod(string $metodo): bool
+    {
+        return in_array(strtoupper(trim($metodo)), ['EFECTIVO', 'CASH'], true);
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+
+        return $value === '' ? null : $value;
     }
 
     private function resolveLinePricingForQuantity(

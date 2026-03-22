@@ -459,15 +459,16 @@ function recalcSummary() {
   if (totEl) totEl.textContent = formatMoney(total);
   if (totalDisplayEl) totalDisplayEl.textContent = formatMoney(total);
 
-  // ✅ Auto-update monto recibido inline
-  const inputRecibido = document.getElementById('payment_modal_monto_recibido');
-  if (inputRecibido) {
-    // Solo actualizar si no tiene foco (para no interrumpir escritura si justo cambia algo por background, aunque raro)
-    // O mejor: siempre actualizar para que coincida con el total, ya que si cambia el total, el monto previo ya no es "exacto".
-    if (document.activeElement !== inputRecibido) {
-      inputRecibido.value = total.toFixed(2);
-    }
-  }
+  window.dispatchEvent(new CustomEvent('pos:totals-updated', {
+    detail: {
+      subtotal,
+      subtotal_bruto: subtotal_bruto,
+      descuento,
+      impuesto,
+      iva,
+      total,
+    },
+  }));
 }
 
 function renderCart() {
