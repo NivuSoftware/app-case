@@ -39,7 +39,7 @@ class SaleRepository
             'user',
             'bodega',
             'items.producto',
-            'payments',
+            'payments.paymentMethod',
             'electronicInvoice',
         ])->find($id);
     }

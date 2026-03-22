@@ -240,7 +240,6 @@
                             </div>
 
                             <div class="space-y-2">
-                                {{-- Método de pago --}}
                                 <div class="flex flex-col space-y-1">
                                     <label class="text-[11px] text-slate-500 uppercase font-semibold">
                                         Método de pago
@@ -257,22 +256,34 @@
                                     </select>
                                 </div>
 
-                                {{-- Monto recibido --}}
-                                <div class="flex flex-col space-y-1">
-                                    <label class="text-[11px] text-slate-500 uppercase font-semibold">
-                                        Monto recibido ($)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        id="payment_modal_monto_recibido"
-                                        class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm h-8"
-                                        placeholder="0.00"
-                                    >
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                    <div class="flex flex-col space-y-1">
+                                        <label class="text-[11px] text-slate-500 uppercase font-semibold">
+                                            Monto recibido ($)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            id="payment_modal_monto_recibido"
+                                            class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm h-8"
+                                            placeholder="0.00"
+                                        >
+                                    </div>
+
+                                    <div class="flex flex-col justify-end space-y-1">
+                                        <label class="text-[11px] text-emerald-600 uppercase font-semibold">
+                                            Cambio a entregar
+                                        </label>
+                                        <div
+                                            id="payment_modal_cambio"
+                                            class="flex items-center h-8 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700"
+                                        >
+                                            $ 0.00
+                                        </div>
+                                    </div>
                                 </div>
 
-                                {{-- Referencia y Observaciones (Pago) --}}
                                 <div class="grid grid-cols-2 gap-1.5">
                                     <div class="flex flex-col space-y-1">
                                         <label class="text-[10px] text-slate-400 uppercase font-semibold">
@@ -299,14 +310,24 @@
                                 </div>
                             </div>
 
-                            <button
-                                type="button"
-                                id="btn-confirm-payment"
-                                class="w-full inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-emerald-600 border border-transparent rounded-2xl font-semibold text-sm text-white uppercase tracking-wide shadow-xl hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
-                            >
-                                <x-heroicon-s-currency-dollar class="w-5 h-5" />
-                                <span>COBRAR</span>
-                            </button>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    id="btn-open-split-payment"
+                                    class="w-full inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-white border border-slate-300 rounded-2xl font-semibold text-sm text-slate-700 uppercase tracking-wide shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300"
+                                >
+                                    <span>PAGO SPLIT</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    id="btn-confirm-payment"
+                                    class="w-full inline-flex justify-center items-center gap-2 px-4 py-2.5 bg-emerald-600 border border-transparent rounded-2xl font-semibold text-sm text-white uppercase tracking-wide shadow-xl hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                                >
+                                    <x-heroicon-s-currency-dollar class="w-5 h-5" />
+                                    <span>COBRAR</span>
+                                </button>
+                            </div>
 
                             @php
                                 $hasCaja = !empty($cajaId);
@@ -367,8 +388,7 @@
             </div>
 
             {{-- MODALES --}}
-            {{-- REMOVED: @include('sales.partials.payment-modal') --}}
-            @include('sales.partials.change-modal')
+            @include('sales.partials.payment-modal')
             @include('sales.partials.client-modal')
             @include('clients.modals.create')
             @include('sales.partials.cash-in-modal')
