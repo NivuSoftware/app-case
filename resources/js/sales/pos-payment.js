@@ -1,4 +1,10 @@
-import { getCart, getTotals, clearCart } from "./pos-cart";
+import { getCart, getCartSnapshot, getTotals, clearCart } from "./pos-cart";
+import { getSelectedClientSnapshot } from "./pos-client";
+import {
+  clearQueuedSaleEditingId,
+  getQueuedSaleEditingId,
+  refreshQueuedSales,
+} from "./pos-queued-sales";
 import { formatMoney, showSaleAlert } from "./pos-utils";
 
 const CASH_METHODS = ["EFECTIVO", "CASH"];
@@ -540,6 +546,8 @@ async function submitSaleWithPayments(payments) {
       num_factura: numFactura,
       observaciones: observacionesVenta,
       iva_enabled: ivaEnabled,
+      cart_snapshot: getCartSnapshot(),
+      client_snapshot: getSelectedClientSnapshot(),
       items: cart.map((item) => {
         const qty = Number(item.cantidad) || 1;
         const lineSubtotal =
@@ -564,7 +572,11 @@ async function submitSaleWithPayments(payments) {
     };
 
     const routes = window.SALES_ROUTES || {};
-    const url = routes.store || "/api/ventas";
+    const editingQueueId = getQueuedSaleEditingId();
+    const queueBase = routes.queueBase || "/api/ventas/queue";
+    const url = editingQueueId
+      ? `${queueBase}/${editingQueueId}/requeue`
+      : (routes.queueStore || "/api/ventas/queue");
     const csrfToken =
       window.CSRF_TOKEN ||
       document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ||
@@ -596,27 +608,28 @@ async function submitSaleWithPayments(payments) {
       }
 
       const firstError = Object.values(data?.errors || {}).flat().find(Boolean);
-      showSaleAlert(firstError || data?.message || "Error de validación en la venta.", true);
+      showSaleAlert(firstError || data?.message || "Error de validación en la factura en cola.", true);
       return;
     }
 
     if (!res.ok) {
-      showSaleAlert("Ocurrió un error al registrar la venta.", true);
+      showSaleAlert("Ocurrió un error al poner la factura en cola.", true);
       return;
     }
 
     const data = await res.json();
-    const sale = data?.data;
-    const saleId = sale?.id;
+    const ticketUrl = data?.data?.ticket_url;
 
-    showSaleAlert(data.message || "Venta registrada correctamente.");
+    showSaleAlert(data.message || "Factura puesta en cola correctamente.");
 
-    if (saleId) {
+    if (ticketUrl) {
       const frame = document.getElementById("ticketPrintFrame");
       if (frame) {
-        frame.src = `/ventas/${saleId}/ticket?autoprint=1&embed=1&ts=${Date.now()}`;
+        frame.src = `${ticketUrl}${ticketUrl.includes("?") ? "&" : "?"}ts=${Date.now()}`;
       }
     }
+
+    clearQueuedSaleEditingId();
 
     clearCart();
     const refInput = document.getElementById("payment_modal_referencia");
@@ -626,6 +639,7 @@ async function submitSaleWithPayments(payments) {
 
     closeSplitModal();
     resetSplitRows();
+    await refreshQueuedSales();
   } catch (error) {
     console.error(error);
     showSaleAlert("Error de comunicación con el servidor.", true);

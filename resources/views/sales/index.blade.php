@@ -396,7 +396,25 @@
                 <section class="hidden xl:flex flex-1 min-w-[18rem] min-h-0">
                     <div class="flex-1 flex flex-col gap-3 min-h-0">
                         <div class="flex-1 min-h-[200px] bg-white border border-slate-200 rounded-3xl shadow-lg overflow-hidden">
-                            <div class="h-full bg-slate-50/40"></div>
+                            <div class="h-full flex flex-col">
+                                <header class="px-4 py-3 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="text-[11px] text-slate-500 uppercase font-semibold">Facturas en cola</p>
+                                        <p id="queued-sales-summary" class="text-[11px] text-slate-400">Mostrando ultimas 3 de 0 en cola</p>
+                                    </div>
+                                </header>
+
+                                <div class="flex-1 min-h-0 p-3 bg-slate-50/40 overflow-y-auto">
+                                    <div id="queued-sales-list" class="space-y-3"></div>
+
+                                    <div
+                                        id="queued-sales-empty"
+                                        class="h-full min-h-[140px] flex items-center justify-center text-center px-4 text-[12px] text-slate-400"
+                                    >
+                                        No hay facturas en cola. Cuando cobres una factura aparecera aqui durante sus 40 segundos de espera.
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="flex-1 min-h-[200px] bg-white border border-slate-200 rounded-3xl shadow-lg overflow-hidden">
                             <div class="h-full flex flex-col">
@@ -452,6 +470,9 @@
     <script>
         window.SALES_ROUTES = {
             store: "{{ route('api.ventas.store') }}",
+            queueBase: "{{ url('/api/ventas/queue') }}",
+            queueStore: "{{ route('api.ventas.queue.store') }}",
+            queueIndex: "{{ route('api.ventas.queue.index') }}",
             productSearch: "{{ url('/productos/list') }}",
             clientIndex: "{{ route('clients.index') }}",
             clientEmailsBase: "{{ url('/clients') }}",

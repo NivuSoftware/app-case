@@ -32,212 +32,267 @@ class SaleService
     }
 
 
-    public function crearVenta(array $data): Sale
+    public function crearVenta(array $data, array $options = []): Sale
     {
-        return DB::transaction(function () use ($data) {
+        $prepared = $this->prepareSaleDraft($data);
 
-            $cajaId = (int) ($data['caja_id'] ?? 0);
+        return $this->crearVentaDesdeDraft($prepared, $options);
+    }
 
-            if ($cajaId <= 0) {
+    public function prepareSaleDraft(array $data): array
+    {
+        $cajaId = (int) ($data['caja_id'] ?? 0);
+
+        if ($cajaId <= 0) {
+            throw ValidationException::withMessages([
+                'caja_id' => 'Debes indicar el número de caja (caja_id).',
+            ]);
+        }
+
+        $this->cashier->getOpenSessionOrFail($cajaId);
+
+        $items = $data['items'] ?? [];
+        $payments = $this->normalizePayments($data);
+
+        if (empty($items)) {
+            throw ValidationException::withMessages([
+                'items' => 'La venta debe tener al menos un ítem.',
+            ]);
+        }
+
+        if (empty($payments)) {
+            throw ValidationException::withMessages([
+                'payments' => 'Debe registrar al menos un pago.',
+            ]);
+        }
+
+        $ivaEnabled = (bool) ($data['iva_enabled'] ?? true);
+
+        $toCents = function ($n): int {
+            $n = $n ?? 0;
+            return (int) round(((float) $n) * 100, 0, PHP_ROUND_HALF_UP);
+        };
+
+        $fromCents = function (int $cents): float {
+            return round($cents / 100, 2);
+        };
+
+        $toBp = function ($pct): int {
+            $p = (float) ($pct ?? 0);
+            if ($p < 0) {
+                $p = 0;
+            }
+            if ($p > 100) {
+                $p = 100;
+            }
+            return (int) round($p * 100, 0, PHP_ROUND_HALF_UP);
+        };
+
+        $subtotalCents = 0;
+        $descuentoCents = 0;
+        $baseImponibleCents = 0;
+        $ivaCents = 0;
+        $impuestoCents = 0;
+
+        foreach ($items as $idx => &$item) {
+            $productoId = (int) ($item['producto_id'] ?? 0);
+            $cantidad = (int) ($item['cantidad'] ?? 0);
+
+            if ($productoId <= 0) {
                 throw ValidationException::withMessages([
-                    'caja_id' => 'Debes indicar el número de caja (caja_id).',
+                    "items.$idx.producto_id" => 'Producto inválido.',
                 ]);
             }
 
-            $this->cashier->getOpenSessionOrFail($cajaId);
-
-            $items = $data['items'] ?? [];
-            $payments = $this->normalizePayments($data);
-
-            if (empty($items)) {
+            if ($cantidad <= 0) {
                 throw ValidationException::withMessages([
-                    'items' => 'La venta debe tener al menos un ítem.',
+                    "items.$idx.cantidad" => 'Cantidad debe ser válida.',
                 ]);
             }
 
-            if (empty($payments)) {
+            $product = Product::with(['price', 'product_prices'])->find($productoId);
+            if (!$product) {
                 throw ValidationException::withMessages([
-                    'payments' => 'Debe registrar al menos un pago.',
+                    "items.$idx.producto_id" => 'El producto no existe.',
                 ]);
             }
 
-            $ivaEnabled = (bool) ($data['iva_enabled'] ?? true);
+            $pricing = $this->resolveLinePricingForQuantity($product, $cantidad, $toCents, $fromCents);
+            $precioUnitario = (float) ($pricing['effective_unit_price'] ?? 0);
 
-            $toCents = function ($n): int {
-                $n = $n ?? 0;
-                return (int) round(((float) $n) * 100, 0, PHP_ROUND_HALF_UP);
-            };
-
-            $fromCents = function (int $cents): float {
-                return round($cents / 100, 2);
-            };
-
-            $toBp = function ($pct): int {
-                $p = (float) ($pct ?? 0);
-                if ($p < 0)
-                    $p = 0;
-                if ($p > 100)
-                    $p = 100;
-                return (int) round($p * 100, 0, PHP_ROUND_HALF_UP);
-            };
-
-            $subtotalCents = 0;
-            $descuentoCents = 0;
-            $baseImponibleCents = 0;
-            $ivaCents = 0;
-            $impuestoCents = 0;
-
-            foreach ($items as $idx => &$item) {
-
-                $productoId = (int) ($item['producto_id'] ?? 0);
-                $cantidad = (int) ($item['cantidad'] ?? 0);
-
-                if ($productoId <= 0) {
-                    throw ValidationException::withMessages([
-                        "items.$idx.producto_id" => 'Producto inválido.',
-                    ]);
-                }
-
-                if ($cantidad <= 0) {
-                    throw ValidationException::withMessages([
-                        "items.$idx.cantidad" => 'Cantidad debe ser válida.',
-                    ]);
-                }
-
-                $product = Product::with(['price', 'product_prices'])->find($productoId);
-                if (!$product) {
-                    throw ValidationException::withMessages([
-                        "items.$idx.producto_id" => 'El producto no existe.',
-                    ]);
-                }
-
-                $pricing = $this->resolveLinePricingForQuantity($product, $cantidad, $toCents, $fromCents);
-                $precioUnitario = (float) ($pricing['effective_unit_price'] ?? 0);
-
-                if (!is_finite($precioUnitario) || $precioUnitario < 0) {
-                    throw ValidationException::withMessages([
-                        "items.$idx.precio_unitario" => 'Precio unitario inválido.',
-                    ]);
-                }
-
-                $descCts = $toCents($item['descuento'] ?? 0);
-                if ($descCts < 0)
-                    $descCts = 0;
-
-                $lineSubtotalCts = (int) ($pricing['line_subtotal_cents'] ?? 0);
-
-                if ($descCts > $lineSubtotalCts) {
-                    throw ValidationException::withMessages([
-                        "items.$idx.descuento" => 'El descuento no puede superar el valor de la línea.',
-                    ]);
-                }
-
-                $lineTotalWithIvaCts = $lineSubtotalCts - $descCts;
-
-                $ivaPctProducto = $product->iva_porcentaje;
-                if ($ivaPctProducto === null || $ivaPctProducto === '') {
-                    $ivaPctProducto = 15;
-                }
-
-                $ivaPctFinal = $ivaEnabled ? (float) $ivaPctProducto : 0.0;
-                $bp = $toBp($ivaPctFinal);
-                $divisor = 10000 + $bp;
-                $lineBaseCts = $divisor > 0
-                    ? (int) floor(($lineTotalWithIvaCts * 10000 + intdiv($divisor, 2)) / $divisor)
-                    : $lineTotalWithIvaCts;
-                $lineIvaCts = $lineTotalWithIvaCts - $lineBaseCts;
-
-                $item['precio_unitario'] = $precioUnitario;
-                $item['iva_porcentaje'] = $ivaPctFinal;
-
-                $item['pricing_rule'] = $pricing['rule'] ?? null;
-                $item['pricing_price_id'] = $pricing['price_id'] ?? null;
-
-                $item['total'] = $fromCents($lineBaseCts);
-
-                $subtotalCents += $lineSubtotalCts;
-                $descuentoCents += $descCts;
-                $baseImponibleCents += $lineBaseCts;
-                $ivaCents += $lineIvaCts;
-            }
-            unset($item);
-
-            $totalCents = $baseImponibleCents + $impuestoCents + $ivaCents;
-
-            $subtotal = $fromCents($baseImponibleCents);
-            $descuentoTotal = $fromCents($descuentoCents);
-            $impuesto = $fromCents($impuestoCents);
-            $iva = $fromCents($ivaCents);
-            $total = $fromCents($totalCents);
-
-            $clientId = $data['client_id'] ?? null;
-            $clientEmailId = $data['client_email_id'] ?? null;
-            $emailDestino = $data['email_destino'] ?? null;
-
-            // VALIDACIÓN: Si el total es >= 50, no puede ser Consumidor Final
-            if ($total >= 50) {
-                // Caso 1: No hay cliente seleccionado (array key vacío o null) -> Es consumidor final implícito
-                if (!$clientId) {
-                    throw ValidationException::withMessages([
-                        'client_id' => 'Para facturas de $50 o más, debe seleccionar un cliente válido (no Consumidor Final).',
-                    ]);
-                }
-
-                // Caso 2: Se envió un ID, verificar si es el CF de la base de datos
-                // (Por si acaso alguien creó un cliente llamado "Consumidor Final" manualmente y lo seleccionó)
-                $clientCheck = \App\Models\Clients\Client::find($clientId);
-                if ($clientCheck) {
-                    // Normalizamos comparación
-                    $esConsumidorFinal =
-                        (trim($clientCheck->identificacion) === '9999999999999') ||
-                        (strtoupper(trim($clientCheck->business)) === 'CONSUMIDOR FINAL');
-
-                    if ($esConsumidorFinal) {
-                        throw ValidationException::withMessages([
-                            'client_id' => 'Para facturas de $50 o más, NO puede ser Consumidor Final.',
-                        ]);
-                    }
-                }
+            if (!is_finite($precioUnitario) || $precioUnitario < 0) {
+                throw ValidationException::withMessages([
+                    "items.$idx.precio_unitario" => 'Precio unitario inválido.',
+                ]);
             }
 
-            if ($clientId && $clientEmailId) {
-                $ok = ClientEmail::where('id', $clientEmailId)
-                    ->where('client_id', $clientId)
-                    ->exists();
-
-                if (!$ok) {
-                    throw ValidationException::withMessages([
-                        'client_email_id' => 'El correo seleccionado no pertenece al cliente.',
-                    ]);
-                }
-
-                if (!$emailDestino) {
-                    $emailDestino = ClientEmail::where('id', $clientEmailId)->value('email');
-                }
+            $descCts = $toCents($item['descuento'] ?? 0);
+            if ($descCts < 0) {
+                $descCts = 0;
             }
 
-            $saleData = [
-                'client_id' => $clientId,
-                'user_id' => $data['user_id'],
-                'client_email_id' => $clientEmailId,
-                'email_destino' => $emailDestino,
-                'bodega_id' => $data['bodega_id'],
-                'fecha_venta' => $data['fecha_venta'],
-                'tipo_documento' => $data['tipo_documento'] ?? 'FACTURA',
-                'num_factura' => $data['num_factura'] ?? null, // normalmente null
-                'subtotal' => $subtotal,
-                'descuento' => $descuentoTotal,
-                'impuesto' => $impuesto,
-                'iva' => $iva,
-                'total' => $total,
-                'estado' => 'pendiente',
-                'observaciones' => $data['observaciones'] ?? null,
-            ];
+            $lineSubtotalCts = (int) ($pricing['line_subtotal_cents'] ?? 0);
 
-            // 1) Creo la venta
+            if ($descCts > $lineSubtotalCts) {
+                throw ValidationException::withMessages([
+                    "items.$idx.descuento" => 'El descuento no puede superar el valor de la línea.',
+                ]);
+            }
+
+            $lineTotalWithIvaCts = $lineSubtotalCts - $descCts;
+
+            $ivaPctProducto = $product->iva_porcentaje;
+            if ($ivaPctProducto === null || $ivaPctProducto === '') {
+                $ivaPctProducto = 15;
+            }
+
+            $ivaPctFinal = $ivaEnabled ? (float) $ivaPctProducto : 0.0;
+            $bp = $toBp($ivaPctFinal);
+            $divisor = 10000 + $bp;
+            $lineBaseCts = $divisor > 0
+                ? (int) floor(($lineTotalWithIvaCts * 10000 + intdiv($divisor, 2)) / $divisor)
+                : $lineTotalWithIvaCts;
+            $lineIvaCts = $lineTotalWithIvaCts - $lineBaseCts;
+
+            $item['precio_unitario'] = $precioUnitario;
+            $item['iva_porcentaje'] = $ivaPctFinal;
+            $item['pricing_rule'] = $pricing['rule'] ?? null;
+            $item['pricing_price_id'] = $pricing['price_id'] ?? null;
+            $item['total'] = $fromCents($lineBaseCts);
+            $item['line_total_with_iva'] = $fromCents($lineTotalWithIvaCts);
+
+            $subtotalCents += $lineSubtotalCts;
+            $descuentoCents += $descCts;
+            $baseImponibleCents += $lineBaseCts;
+            $ivaCents += $lineIvaCts;
+        }
+        unset($item);
+
+        $totalCents = $baseImponibleCents + $impuestoCents + $ivaCents;
+
+        $subtotal = $fromCents($baseImponibleCents);
+        $descuentoTotal = $fromCents($descuentoCents);
+        $impuesto = $fromCents($impuestoCents);
+        $iva = $fromCents($ivaCents);
+        $total = $fromCents($totalCents);
+
+        $clientId = $data['client_id'] ?? null;
+        $clientEmailId = $data['client_email_id'] ?? null;
+        $emailDestino = $data['email_destino'] ?? null;
+
+        if ($total >= 50) {
+            if (!$clientId) {
+                throw ValidationException::withMessages([
+                    'client_id' => 'Para facturas de $50 o más, debe seleccionar un cliente válido (no Consumidor Final).',
+                ]);
+            }
+
+            $clientCheck = \App\Models\Clients\Client::find($clientId);
+            if ($clientCheck) {
+                $esConsumidorFinal =
+                    (trim((string) $clientCheck->identificacion) === '9999999999999') ||
+                    (strtoupper(trim((string) $clientCheck->business)) === 'CONSUMIDOR FINAL');
+
+                if ($esConsumidorFinal) {
+                    throw ValidationException::withMessages([
+                        'client_id' => 'Para facturas de $50 o más, NO puede ser Consumidor Final.',
+                    ]);
+                }
+            }
+        }
+
+        if ($clientId && $clientEmailId) {
+            $ok = ClientEmail::where('id', $clientEmailId)
+                ->where('client_id', $clientId)
+                ->exists();
+
+            if (!$ok) {
+                throw ValidationException::withMessages([
+                    'client_email_id' => 'El correo seleccionado no pertenece al cliente.',
+                ]);
+            }
+
+            if (!$emailDestino) {
+                $emailDestino = ClientEmail::where('id', $clientEmailId)->value('email');
+            }
+        }
+
+        $saleData = [
+            'client_id' => $clientId,
+            'user_id' => $data['user_id'],
+            'client_email_id' => $clientEmailId,
+            'email_destino' => $emailDestino,
+            'bodega_id' => $data['bodega_id'],
+            'fecha_venta' => $data['fecha_venta'],
+            'tipo_documento' => $data['tipo_documento'] ?? 'FACTURA',
+            'num_factura' => $data['num_factura'] ?? null,
+            'subtotal' => $subtotal,
+            'descuento' => $descuentoTotal,
+            'impuesto' => $impuesto,
+            'iva' => $iva,
+            'total' => $total,
+            'estado' => 'pendiente',
+            'observaciones' => $data['observaciones'] ?? null,
+        ];
+
+        $resolvedPayments = $this->resolvePayments(
+            $payments,
+            $totalCents,
+            $data['user_id'],
+            $data['fecha_venta'] ?? null,
+            $toCents,
+            $fromCents
+        );
+
+        $clientSnapshot = $this->buildClientSnapshot(
+            $clientId,
+            $clientEmailId,
+            $emailDestino,
+            $data['client_snapshot'] ?? null
+        );
+
+        return [
+            'caja_id' => $cajaId,
+            'iva_enabled' => $ivaEnabled,
+            'sale_data' => $saleData,
+            'items' => array_map(function (array $item): array {
+                return [
+                    'producto_id' => $item['producto_id'],
+                    'descripcion' => $item['descripcion'],
+                    'cantidad' => $item['cantidad'],
+                    'precio_unitario' => $item['precio_unitario'],
+                    'descuento' => $item['descuento'] ?? 0,
+                    'iva_porcentaje' => $item['iva_porcentaje'] ?? 0,
+                    'total' => $item['total'],
+                    'percha_id' => $item['percha_id'] ?? null,
+                ];
+            }, $items),
+            'payments' => $resolvedPayments['records'],
+            'cash_amount' => (float) ($resolvedPayments['cash_amount'] ?? 0),
+            'total_cents' => $totalCents,
+            'meta' => $this->buildItemsMeta($items),
+            'client_snapshot' => $clientSnapshot,
+            'restore_payload' => [
+                'cart' => $this->buildRestoreCartSnapshot($data['cart_snapshot'] ?? null, $items),
+                'client' => $this->buildRestoreClientSnapshot($data['client_snapshot'] ?? null, $clientSnapshot),
+            ],
+        ];
+    }
+
+    public function crearVentaDesdeDraft(array $prepared, array $options = []): Sale
+    {
+        return DB::transaction(function () use ($prepared, $options) {
+            $saleData = $prepared['sale_data'] ?? [];
+            $items = $prepared['items'] ?? [];
+            $payments = $prepared['payments'] ?? [];
+            $cajaId = (int) ($prepared['caja_id'] ?? 0);
+
+            if (!empty($options['reserved_num_factura'])) {
+                $saleData['num_factura'] = $options['reserved_num_factura'];
+            }
+
             $sale = $this->sales->createSale($saleData);
 
-            // 2) Guardo items (AÚN SIN descontar stock)
             foreach ($items as $item) {
                 $this->sales->addItem($sale, [
                     'producto_id' => $item['producto_id'],
@@ -246,43 +301,33 @@ class SaleService
                     'precio_unitario' => $item['precio_unitario'],
                     'descuento' => $item['descuento'] ?? 0,
                     'iva_porcentaje' => $item['iva_porcentaje'] ?? 0,
-                    'total' => $item['total'], // sin IVA
+                    'total' => $item['total'],
                 ]);
             }
 
-            // 3) Pagos
-            $resolvedPayments = $this->resolvePayments(
-                $payments,
-                $totalCents,
-                $data['user_id'],
-                $data['fecha_venta'] ?? null,
-                $toCents,
-                $fromCents
-            );
-
-            foreach ($resolvedPayments['records'] as $paymentRecord) {
+            foreach ($payments as $paymentRecord) {
                 $this->sales->addPayment($sale, $paymentRecord);
             }
 
-            // 4) Marco como pagada
             $this->sales->updateEstado($sale, 'pagada');
 
-            // 5) ✅ Genero el num_factura (aquí se setea en sales.num_factura)
             if (($sale->tipo_documento ?? 'FACTURA') === 'FACTURA') {
-                $this->sriInvoiceService->generateXmlForSale($sale->id);
-                $sale->refresh(); // ✅ ahora $sale->num_factura ya existe
+                $this->sriInvoiceService->generateXmlForSale(
+                    $sale->id,
+                    $options['reserved_sequence'] ?? null
+                );
+                $sale->refresh();
             }
 
-            // 6) ✅ Recién AHORA descuento stock (ya con num_factura real)
             $vendioSinStock = false;
 
             foreach ($items as $item) {
                 $teniaStock = $this->inventory->decreaseStockForSale(
                     $item['producto_id'],
-                    $data['bodega_id'],
+                    $saleData['bodega_id'],
                     $item['percha_id'] ?? null,
                     $item['cantidad'],
-                    $data['user_id'],
+                    $saleData['user_id'],
                     $sale->id,
                     $sale->num_factura
                 );
@@ -292,21 +337,18 @@ class SaleService
                 }
             }
 
-            // 7) Caja (solo por la porcion en efectivo)
-            $cashPortion = (float) ($resolvedPayments['cash_amount'] ?? 0);
-
+            $cashPortion = (float) ($prepared['cash_amount'] ?? 0);
             if ($cashPortion > 0) {
                 $this->cashier->registerSaleIncome(
                     $cajaId,
-                    (int) $data['user_id'],
+                    (int) $saleData['user_id'],
                     (int) $sale->id,
                     $sale->num_factura,
                     $cashPortion
                 );
             }
 
-            // 8) Job SRI completo (firma + envío + autorización + correo)
-            if (($sale->tipo_documento ?? 'FACTURA') === 'FACTURA') {
+            if (($sale->tipo_documento ?? 'FACTURA') === 'FACTURA' && ($options['dispatch_sri_job'] ?? true)) {
                 ProcessSriInvoiceJob::dispatch($sale->id)->afterCommit();
             }
 
@@ -321,6 +363,82 @@ class SaleService
     public function getById(int $id): ?Sale
     {
         return $this->sales->findById($id);
+    }
+
+    private function buildClientSnapshot(
+        mixed $clientId,
+        mixed $clientEmailId,
+        ?string $emailDestino,
+        mixed $clientSnapshot
+    ): array {
+        $existing = is_array($clientSnapshot) ? $clientSnapshot : [];
+
+        if (!$clientId) {
+            return [
+                'clientId' => null,
+                'name' => $existing['name'] ?? 'CONSUMIDOR FINAL',
+                'ident' => $existing['ident'] ?? '9999999999999',
+                'clientEmailId' => null,
+                'clientEmail' => null,
+                'isConsumidorFinal' => true,
+            ];
+        }
+
+        $client = \App\Models\Clients\Client::find($clientId);
+
+        return [
+            'clientId' => (string) $clientId,
+            'name' => $existing['name'] ?? (string) ($client?->business ?? 'Cliente seleccionado'),
+            'ident' => $existing['ident'] ?? (string) ($client?->identificacion ?? 'Sin identificación'),
+            'clientEmailId' => $clientEmailId ? (string) $clientEmailId : null,
+            'clientEmail' => $existing['clientEmail'] ?? $emailDestino,
+            'isConsumidorFinal' => false,
+        ];
+    }
+
+    private function buildItemsMeta(array $items): array
+    {
+        $lineas = count($items);
+        $unidades = array_reduce($items, function (int $carry, array $item): int {
+            return $carry + (int) ($item['cantidad'] ?? 0);
+        }, 0);
+        $firstDescription = trim((string) ($items[0]['descripcion'] ?? ''));
+
+        return [
+            'lineas' => $lineas,
+            'unidades' => $unidades,
+            'preview' => $lineas <= 1
+                ? ($firstDescription !== '' ? $firstDescription : 'Sin detalle')
+                : (($firstDescription !== '' ? $firstDescription : 'Varios productos') . ' +' . ($lineas - 1)),
+        ];
+    }
+
+    private function buildRestoreCartSnapshot(mixed $cartSnapshot, array $preparedItems): array
+    {
+        if (is_array($cartSnapshot) && !empty($cartSnapshot)) {
+            return array_values($cartSnapshot);
+        }
+
+        return array_map(function (array $item): array {
+            return [
+                'producto_id' => $item['producto_id'],
+                'descripcion' => $item['descripcion'],
+                'cantidad' => $item['cantidad'],
+                'precio_unitario' => $item['precio_unitario'],
+                'percha_id' => $item['percha_id'] ?? null,
+                'iva_porcentaje' => $item['iva_porcentaje'] ?? 0,
+                'descuento_pct' => 0,
+            ];
+        }, $preparedItems);
+    }
+
+    private function buildRestoreClientSnapshot(mixed $clientSnapshot, array $fallback): array
+    {
+        if (is_array($clientSnapshot) && !empty($clientSnapshot)) {
+            return $clientSnapshot;
+        }
+
+        return $fallback;
     }
 
     private function normalizePayments(array $data): array
