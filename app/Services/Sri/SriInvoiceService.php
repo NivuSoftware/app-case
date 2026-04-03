@@ -4,6 +4,7 @@ namespace App\Services\Sri;
 
 use App\Models\Sales\Sale;
 use App\Models\Sri\SriConfig;
+use App\Models\Sri\ReusableInvoiceSequence;
 use App\Repositories\Sri\ElectronicInvoiceRepository;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -93,10 +94,65 @@ class SriInvoiceService
         $inv->save();
     }
 
-
-    public function generateXmlForSale(int $saleId)
+    public function reserveInvoiceNumber(): array
     {
-        return DB::transaction(function () use ($saleId) {
+        return DB::transaction(function () {
+            $reusable = ReusableInvoiceSequence::query()
+                ->whereNull('reused_at')
+                ->orderByDesc('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($reusable) {
+                $reusable->reused_at = now();
+                $reusable->save();
+
+                return [
+                    'sequence' => (int) $reusable->sequence,
+                    'num_factura' => (string) $reusable->num_factura,
+                    'reused' => true,
+                ];
+            }
+
+            /** @var SriConfig $cfg */
+            $cfg = $this->configService->getOrFailForUpdate();
+            $seq = (int) ($cfg->secuencial_factura_actual ?? 1);
+            if ($seq <= 0) {
+                $seq = 1;
+            }
+
+            $number = $this->buildInvoiceNumberFromSequence($cfg, $seq);
+
+            $cfg->secuencial_factura_actual = $seq + 1;
+            $cfg->save();
+
+            return [
+                'sequence' => $seq,
+                'num_factura' => $number,
+                'reused' => false,
+            ];
+        });
+    }
+
+    public function releaseReservedInvoiceNumber(int $sequence, string $numFactura, ?int $queueId = null): void
+    {
+        if ($sequence <= 0 || trim($numFactura) === '') {
+            return;
+        }
+
+        ReusableInvoiceSequence::query()->updateOrCreate(
+            ['sequence' => $sequence],
+            [
+                'num_factura' => $numFactura,
+                'released_from_queue_id' => $queueId,
+                'reused_at' => null,
+            ]
+        );
+    }
+
+    public function generateXmlForSale(int $saleId, ?int $reservedSequence = null)
+    {
+        return DB::transaction(function () use ($saleId, $reservedSequence) {
 
             /** @var Sale $sale */
             $sale = Sale::with([
@@ -127,17 +183,20 @@ class SriInvoiceService
             /** @var SriConfig $cfg */
             $cfg = $this->configService->getOrFailForUpdate();
 
-            $estab = str_pad((string) ($cfg->codigo_establecimiento ?? '001'), 3, '0', STR_PAD_LEFT);
-            $pto = str_pad((string) ($cfg->codigo_punto_emision ?? '001'), 3, '0', STR_PAD_LEFT);
+            $seq = $reservedSequence;
+            if ($seq === null) {
+                $seq = (int) ($cfg->secuencial_factura_actual ?? 1);
+                if ($seq <= 0) {
+                    $seq = 1;
+                }
+            }
 
-            $seq = (int) ($cfg->secuencial_factura_actual ?? 1);
-            if ($seq <= 0)
-                $seq = 1;
-
-            $secuencial = str_pad((string) $seq, 9, '0', STR_PAD_LEFT);
-            $serie = $estab . $pto;
-
-            $numFactura = "{$estab}-{$pto}-{$secuencial}";
+            $numberParts = $this->buildInvoiceNumberParts($cfg, $seq);
+            $estab = $numberParts['estab'];
+            $pto = $numberParts['pto'];
+            $secuencial = $numberParts['secuencial'];
+            $serie = $numberParts['serie'];
+            $numFactura = $numberParts['num_factura'];
             $sale->num_factura = $sale->num_factura ?: $numFactura;
             $sale->save();
 
@@ -172,8 +231,10 @@ class SriInvoiceService
                 'estado_sri' => 'PENDIENTE_ENVIO',
             ]);
 
-            $cfg->secuencial_factura_actual = $seq + 1;
-            $cfg->save();
+            if ($reservedSequence === null) {
+                $cfg->secuencial_factura_actual = $seq + 1;
+                $cfg->save();
+            }
 
             return $invoice;
         });
@@ -746,6 +807,27 @@ class SriInvoiceService
         if ($dv === 10)
             return 1;
         return $dv;
+    }
+
+    private function buildInvoiceNumberFromSequence(SriConfig $cfg, int $sequence): string
+    {
+        return $this->buildInvoiceNumberParts($cfg, $sequence)['num_factura'];
+    }
+
+    private function buildInvoiceNumberParts(SriConfig $cfg, int $sequence): array
+    {
+        $estab = str_pad((string) ($cfg->codigo_establecimiento ?? '001'), 3, '0', STR_PAD_LEFT);
+        $pto = str_pad((string) ($cfg->codigo_punto_emision ?? '001'), 3, '0', STR_PAD_LEFT);
+        $secuencial = str_pad((string) max(1, $sequence), 9, '0', STR_PAD_LEFT);
+        $serie = $estab . $pto;
+
+        return [
+            'estab' => $estab,
+            'pto' => $pto,
+            'secuencial' => $secuencial,
+            'serie' => $serie,
+            'num_factura' => "{$estab}-{$pto}-{$secuencial}",
+        ];
     }
 
     private function resolveCompradorSri(Sale $sale): array
