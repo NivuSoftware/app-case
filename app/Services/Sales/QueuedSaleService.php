@@ -15,7 +15,7 @@ use Illuminate\Validation\ValidationException;
 
 class QueuedSaleService
 {
-    public const DEFAULT_DURATION_SECONDS = 40;
+    public const DEFAULT_DURATION_SECONDS = 60;
 
     public function __construct(
         private QueuedSaleRepository $queues,
@@ -31,6 +31,12 @@ class QueuedSaleService
 
         $queue = DB::transaction(function () use ($data, $prepared, $duration) {
             $reservation = $this->sriInvoiceService->reserveInvoiceNumber();
+            $accessKey = $this->sriInvoiceService->buildAccessKeyForSequence(
+                (int) $reservation['sequence'],
+                $prepared['sale_data']['fecha_venta']
+            );
+            $prepared['reserved_access_key'] = $accessKey['clave_acceso'];
+            $prepared['reserved_codigo_numerico'] = $accessKey['codigo_numerico'];
 
             return $this->queues->create([
                 'user_id' => (int) $data['user_id'],
@@ -77,6 +83,13 @@ class QueuedSaleService
                     'queue' => 'La factura dejó de estar disponible para reencolar.',
                 ]);
             }
+
+            $accessKey = $this->sriInvoiceService->buildAccessKeyForSequence(
+                (int) $queue->reserved_sequence,
+                $prepared['sale_data']['fecha_venta']
+            );
+            $prepared['reserved_access_key'] = $accessKey['clave_acceso'];
+            $prepared['reserved_codigo_numerico'] = $accessKey['codigo_numerico'];
 
             $queue->fill([
                 'caja_id' => (int) $prepared['caja_id'],
@@ -268,11 +281,12 @@ class QueuedSaleService
         }
 
         try {
-            $prepared = $this->getPreparedPayload($queue);
+            $prepared = $this->ensureReservedAccessKey($queue);
 
             $sale = $this->sales->crearVentaDesdeDraft($prepared, [
                 'reserved_num_factura' => $queue->reserved_num_factura,
                 'reserved_sequence' => $queue->reserved_sequence,
+                'reserved_codigo_numerico' => $prepared['reserved_codigo_numerico'] ?? null,
                 'dispatch_sri_job' => true,
             ]);
 
@@ -312,7 +326,7 @@ class QueuedSaleService
 
     public function buildTicketSaleViewModel(QueuedSale $queue): object
     {
-        $prepared = $this->getPreparedPayload($queue);
+        $prepared = $this->ensureReservedAccessKey($queue);
         $saleData = $prepared['sale_data'] ?? [];
         $clientSnapshot = $prepared['client_snapshot'] ?? [];
         $restorePayload = $prepared['restore_payload'] ?? [];
@@ -364,6 +378,7 @@ class QueuedSaleService
         $viewSale->cliente_nombre = $clientSnapshot['name'] ?? null;
         $viewSale->cliente_identificacion = $clientSnapshot['ident'] ?? null;
         $viewSale->cliente_email = $clientSnapshot['clientEmail'] ?? null;
+        $viewSale->clave_acceso = $prepared['reserved_access_key'] ?? null;
         $viewSale->restore_payload = $restorePayload;
 
         return $viewSale;
@@ -404,6 +419,39 @@ class QueuedSaleService
         return is_array($payload['prepared'] ?? null)
             ? $payload['prepared']
             : (is_array($payload) ? $payload : []);
+    }
+
+    private function ensureReservedAccessKey(QueuedSale $queue): array
+    {
+        $prepared = $this->getPreparedPayload($queue);
+
+        if (!empty($prepared['reserved_access_key']) && !empty($prepared['reserved_codigo_numerico'])) {
+            return $prepared;
+        }
+
+        if ((int) ($queue->reserved_sequence ?? 0) <= 0) {
+            return $prepared;
+        }
+
+        $fechaVenta = $prepared['sale_data']['fecha_venta'] ?? $queue->fecha_venta ?? now();
+        $accessKey = $this->sriInvoiceService->buildAccessKeyForSequence(
+            (int) $queue->reserved_sequence,
+            $fechaVenta
+        );
+
+        $prepared['reserved_access_key'] = $accessKey['clave_acceso'];
+        $prepared['reserved_codigo_numerico'] = $accessKey['codigo_numerico'];
+
+        $payload = $queue->payload_json ?? [];
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
+        $payload['prepared'] = $prepared;
+        $queue->payload_json = $payload;
+        $queue->save();
+
+        return $prepared;
     }
 
     private function dispatchEmissionJob(QueuedSale $queue): void

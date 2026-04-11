@@ -134,6 +134,28 @@ class SriInvoiceService
         });
     }
 
+    public function buildAccessKeyForSequence(int $sequence, mixed $fechaVenta, ?string $codigoNumerico = null): array
+    {
+        $cfg = $this->configService->get();
+
+        if (!$cfg) {
+            throw ValidationException::withMessages([
+                'sri' => 'No existe configuracion SRI. Debes registrarla primero en el panel.',
+            ]);
+        }
+
+        $numberParts = $this->buildInvoiceNumberParts($cfg, $sequence);
+        $accessKey = $this->buildAccessKey(
+            $cfg,
+            $fechaVenta,
+            $numberParts['serie'],
+            $numberParts['secuencial'],
+            $codigoNumerico
+        );
+
+        return array_merge($numberParts, $accessKey);
+    }
+
     public function releaseReservedInvoiceNumber(int $sequence, string $numFactura, ?int $queueId = null): void
     {
         if ($sequence <= 0 || trim($numFactura) === '') {
@@ -150,9 +172,13 @@ class SriInvoiceService
         );
     }
 
-    public function generateXmlForSale(int $saleId, ?int $reservedSequence = null)
+    public function generateXmlForSale(
+        int $saleId,
+        ?int $reservedSequence = null,
+        ?string $reservedCodigoNumerico = null
+    )
     {
-        return DB::transaction(function () use ($saleId, $reservedSequence) {
+        return DB::transaction(function () use ($saleId, $reservedSequence, $reservedCodigoNumerico) {
 
             /** @var Sale $sale */
             $sale = Sale::with([
@@ -201,16 +227,14 @@ class SriInvoiceService
             $sale->save();
 
 
-            $fecha = Carbon::parse($sale->fecha_venta)->format('dmY');
-            $codDoc = '01';
-            $ruc = preg_replace('/\D+/', '', (string) $cfg->ruc);
-            $ambiente = (string) ($cfg->ambiente ?? 1); // 1 pruebas, 2 prod
-            $tipoEmision = '1';
-            $codigoNumerico = str_pad((string) random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
-
-            $claveSinDv = $fecha . $codDoc . $ruc . $ambiente . $serie . $secuencial . $codigoNumerico . $tipoEmision;
-            $dv = $this->modulo11($claveSinDv);
-            $claveAcceso = $claveSinDv . $dv;
+            $accessKey = $this->buildAccessKey(
+                $cfg,
+                $sale->fecha_venta,
+                $serie,
+                $secuencial,
+                $reservedCodigoNumerico
+            );
+            $claveAcceso = $accessKey['clave_acceso'];
 
             $xmlString = $this->buildFacturaXml($sale, $cfg, $claveAcceso, $estab, $pto, $secuencial);
 
@@ -807,6 +831,41 @@ class SriInvoiceService
         if ($dv === 10)
             return 1;
         return $dv;
+    }
+
+    private function buildAccessKey(
+        SriConfig $cfg,
+        mixed $fechaVenta,
+        string $serie,
+        string $secuencial,
+        ?string $codigoNumerico = null
+    ): array {
+        $fecha = Carbon::parse($fechaVenta)->format('dmY');
+        $codDoc = '01';
+        $ruc = preg_replace('/\D+/', '', (string) $cfg->ruc);
+        $ambiente = (string) ($cfg->ambiente ?? 1);
+        $tipoEmision = '1';
+        $codigoNumerico = $this->normalizeCodigoNumerico($codigoNumerico)
+            ?? str_pad((string) random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+
+        $claveSinDv = $fecha . $codDoc . $ruc . $ambiente . $serie . $secuencial . $codigoNumerico . $tipoEmision;
+        $dv = $this->modulo11($claveSinDv);
+
+        return [
+            'clave_acceso' => $claveSinDv . $dv,
+            'codigo_numerico' => $codigoNumerico,
+        ];
+    }
+
+    private function normalizeCodigoNumerico(?string $codigoNumerico): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $codigoNumerico);
+
+        if ($digits === '') {
+            return null;
+        }
+
+        return str_pad(substr($digits, -8), 8, '0', STR_PAD_LEFT);
     }
 
     private function buildInvoiceNumberFromSequence(SriConfig $cfg, int $sequence): string

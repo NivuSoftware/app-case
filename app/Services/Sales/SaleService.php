@@ -11,6 +11,7 @@ use Illuminate\Validation\ValidationException;
 use App\Models\Sales\Sale;
 use App\Services\Cashier\CashierService;
 use App\Models\Clients\ClientEmail;
+use App\Models\User;
 use App\Jobs\ProcessSriInvoiceJob;
 use App\Services\Sri\SriInvoiceService;
 
@@ -49,7 +50,8 @@ class SaleService
             ]);
         }
 
-        $this->cashier->getOpenSessionOrFail($cajaId);
+        $cashUser = User::find((int) ($data['user_id'] ?? 0));
+        $this->cashier->getOpenSessionForUserOrFail($cajaId, $cashUser);
 
         $items = $data['items'] ?? [];
         $payments = $this->normalizePayments($data);
@@ -314,7 +316,8 @@ class SaleService
             if (($sale->tipo_documento ?? 'FACTURA') === 'FACTURA') {
                 $this->sriInvoiceService->generateXmlForSale(
                     $sale->id,
-                    $options['reserved_sequence'] ?? null
+                    $options['reserved_sequence'] ?? null,
+                    $options['reserved_codigo_numerico'] ?? null
                 );
                 $sale->refresh();
             }

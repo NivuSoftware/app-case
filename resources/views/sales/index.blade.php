@@ -291,30 +291,37 @@
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-2 gap-1.5">
-                                    <div class="flex flex-col space-y-1">
-                                        <label class="text-[10px] text-slate-400 uppercase font-semibold">
-                                            Referencia
-                                        </label>
-                                        <input
-                                            type="text"
-                                            id="payment_modal_referencia"
-                                            class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs h-7"
-                                            placeholder="Nro. voucher..."
-                                        >
+                                <details class="group rounded-2xl border border-slate-200 bg-slate-50">
+                                    <summary class="list-none flex items-center justify-between px-4 py-2 cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                                        <span>Referencia y observaciones</span>
+                                        <span class="text-slate-400 transition group-open:rotate-180">⌄</span>
+                                    </summary>
+
+                                    <div class="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                        <div class="flex flex-col space-y-1">
+                                            <label class="text-[10px] text-slate-400 uppercase font-semibold">
+                                                Referencia
+                                            </label>
+                                            <input
+                                                type="text"
+                                                id="payment_modal_referencia"
+                                                class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs h-7 bg-white"
+                                                placeholder="Nro. voucher..."
+                                            >
+                                        </div>
+                                        <div class="flex flex-col space-y-1">
+                                            <label class="text-[10px] text-slate-400 uppercase font-semibold">
+                                                Observaciones
+                                            </label>
+                                            <textarea
+                                                id="payment_modal_observaciones"
+                                                rows="1"
+                                                class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs py-0.5 bg-white"
+                                                placeholder="Notas..."
+                                            ></textarea>
+                                        </div>
                                     </div>
-                                    <div class="flex flex-col space-y-1">
-                                        <label class="text-[10px] text-slate-400 uppercase font-semibold">
-                                            Observaciones
-                                        </label>
-                                        <textarea
-                                            id="payment_modal_observaciones"
-                                            rows="1"
-                                            class="border-slate-200 rounded-xl shadow-sm focus:ring-blue-500 focus:border-blue-500 text-xs py-0.5"
-                                            placeholder="Notas..."
-                                        ></textarea>
-                                    </div>
-                                </div>
+                                </details>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -411,7 +418,7 @@
                                         id="queued-sales-empty"
                                         class="h-full min-h-[140px] flex items-center justify-center text-center px-4 text-[12px] text-slate-400"
                                     >
-                                        No hay facturas en cola. Cuando cobres una factura aparecera aqui durante sus 40 segundos de espera.
+                                        No hay facturas en cola. Cuando cobres una factura aparecerá aquí durante sus 60 segundos de espera.
                                     </div>
                                 </div>
                             </div>

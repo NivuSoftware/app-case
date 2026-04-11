@@ -37,8 +37,10 @@
       ?? ($sale->cliente_email ?? null);
 
   $atendidoPor  = $sale->user->name ?? $sale->user->nombre ?? '-';
-  $invoice = \App\Models\Sri\ElectronicInvoice::where('sale_id', $sale->id)->first();
-  $claveAcceso = $invoice?->clave_acceso;
+  $invoice = !empty($sale->id)
+      ? \App\Models\Sri\ElectronicInvoice::where('sale_id', $sale->id)->first()
+      : null;
+  $claveAcceso = $sale->clave_acceso ?? $invoice?->clave_acceso ?? null;
 @endphp
 
 
@@ -172,7 +174,7 @@
       </div>
       <div style="margin-top:6px;">
         Dentro de las próximas 24h con la siguiente clave de acceso:
-        <span class="bold">{{ $claveAcceso ?? 'PENDIENTE' }}</span>
+        <span class="bold">{{ $claveAcceso ?? 'No generada' }}</span>
       </div>
     </div>
 
