@@ -124,12 +124,24 @@
                                 data-cf-name="CONSUMIDOR FINAL"
                                 data-cf-ident="9999999999999"
                                 />
-                                <p id="cliente_identificacion" class="text-[10px] text-slate-400 truncate">
-                                    Cédula o RUC aquí
-                                </p>
+                                <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
+                                    <span id="cliente_identificacion" class="truncate">
+                                        Cédula o RUC aquí
+                                    </span>
+                                    <span id="cliente_telefono" class="hidden truncate"></span>
+                                    <span id="cliente_direccion" class="hidden truncate"></span>
+                                </div>
                                 </div>
 
                                 <div class="flex items-center gap-1 shrink-0">
+                                <button
+                                    type="button"
+                                    id="btn-edit-selected-client"
+                                    class="hidden inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-700 text-white text-xs font-bold shadow hover:bg-slate-800"
+                                    title="Editar cliente seleccionado"
+                                >
+                                    ✎
+                                </button>
                                 <button
                                     type="button"
                                     id="btn-open-client-modal"
@@ -452,6 +464,7 @@
             @include('sales.partials.payment-modal')
             @include('sales.partials.client-modal')
             @include('clients.modals.create')
+            @include('clients.modals.edit')
             @include('sales.partials.cash-in-modal')
             @include('sales.partials.cash-out-modal')
 
