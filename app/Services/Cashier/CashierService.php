@@ -2,6 +2,7 @@
 
 namespace App\Services\Cashier;
 
+use App\Models\User;
 use App\Models\Cashier\CashSession;
 use App\Repositories\Cashier\CashierRepository;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +82,8 @@ class CashierService
         int $userId,
         string $type,
         float $amount,
-        string $reason
+        string $reason,
+        bool $isAdmin = false
     ) {
         $type = strtoupper(trim($type));
         if (!in_array($type, ['IN', 'OUT'], true)) {
@@ -96,6 +98,11 @@ class CashierService
         }
 
         $session = $this->getOpenSessionOrFail($cajaId);
+        if (!$this->canResumeSession($session, $userId, $isAdmin)) {
+            throw ValidationException::withMessages([
+                'caja_id' => 'Esta caja está abierta por otro usuario. No puedes operar esta sesión.',
+            ]);
+        }
 
         return $this->repo->createMovement([
             'cash_session_id' => $session->id,
@@ -144,10 +151,16 @@ class CashierService
         int $cajaId,
         int $userId,
         array $closingCount,
-        ?string $notes = null
+        ?string $notes = null,
+        bool $isAdmin = false
     ): CashSession {
-        return DB::transaction(function () use ($cajaId, $userId, $closingCount, $notes) {
+        return DB::transaction(function () use ($cajaId, $userId, $closingCount, $notes, $isAdmin) {
             $session = $this->getOpenSessionOrFail($cajaId);
+            if (!$this->canResumeSession($session, $userId, $isAdmin)) {
+                throw ValidationException::withMessages([
+                    'caja_id' => 'Esta caja está abierta por otro usuario. No puedes cerrarla.',
+                ]);
+            }
 
             $declared = $this->computeDeclaredAmount($closingCount);
             $expected = $this->computeExpectedAmount($session);
@@ -175,9 +188,39 @@ class CashierService
     }
 
     
-    public function canResumeSession(CashSession $session, int $userId): bool
+    public function canResumeSession(CashSession $session, int $userId, bool $isAdmin = false): bool
     {
+        if ($isAdmin) {
+            return true;
+        }
+
         return (int)$session->opened_by === (int)$userId;
+    }
+
+    public function canUserResumeSession(CashSession $session, ?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        return $this->canResumeSession(
+            $session,
+            (int) $user->id,
+            $user->hasRole('admin')
+        );
+    }
+
+    public function getOpenSessionForUserOrFail(int $cajaId, ?User $user): CashSession
+    {
+        $session = $this->getOpenSessionOrFail($cajaId);
+
+        if (!$this->canUserResumeSession($session, $user)) {
+            throw ValidationException::withMessages([
+                'caja_id' => 'Esta caja está abierta por otro usuario. No puedes retomar esta sesión.',
+            ]);
+        }
+
+        return $session;
     }
 
     public function registerSaleIncome(

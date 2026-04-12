@@ -3,6 +3,7 @@ import { showSaleAlert } from './pos-utils';
 
 console.log('[POS] pos-client.js cargado');
 let createClientFormInitialized = false;
+let editClientFormInitialized = false;
 
 function getCfMeta() {
   const el = document.getElementById('client_id');
@@ -18,6 +19,8 @@ function setConsumidorFinalUI() {
   const inputId = document.getElementById('client_id');
   const inputName = document.getElementById('cliente_nombre');
   const identEl = document.getElementById('cliente_identificacion');
+  setSelectedClientDetails('', '');
+  toggleEditSelectedClientButton(false);
 
   if (inputId) {
     inputId.value = '';
@@ -30,6 +33,53 @@ function setConsumidorFinalUI() {
   const resumen = document.getElementById('cliente_email_resumen');
   if (select) select.innerHTML = '<option value="">Sin correo (Consumidor Final)</option>';
   if (resumen) resumen.textContent = 'Sin correo seleccionado';
+}
+
+function setSelectedClientDetails(telefono = '', direccion = '') {
+  const phoneEl = document.getElementById('cliente_telefono');
+  const addressEl = document.getElementById('cliente_direccion');
+
+  const phone = String(telefono || '').trim();
+  const address = String(direccion || '').trim();
+
+  if (phoneEl) {
+    phoneEl.textContent = phone ? `Tel: ${phone}` : '';
+    phoneEl.classList.toggle('hidden', !phone);
+  }
+
+  if (addressEl) {
+    addressEl.textContent = address ? `Dir: ${address}` : '';
+    addressEl.classList.toggle('hidden', !address);
+  }
+}
+
+function toggleEditSelectedClientButton(show) {
+  const btn = document.getElementById('btn-edit-selected-client');
+  if (!btn) return;
+  btn.classList.toggle('hidden', !show);
+}
+
+function getClientName(client) {
+  return client?.business || client?.nombre || 'Cliente seleccionado';
+}
+
+function getClientById(clientId) {
+  const id = String(clientId || '');
+  if (!id) return null;
+
+  return allClients.find((client) => String(client?.id) === id) || null;
+}
+
+function upsertClientCache(client) {
+  if (!client?.id) return;
+
+  const idx = allClients.findIndex((item) => String(item?.id) === String(client.id));
+  if (idx >= 0) {
+    allClients[idx] = { ...allClients[idx], ...client };
+  } else {
+    allClients.push(client);
+  }
+  allClientsLoaded = true;
 }
 
 
@@ -148,13 +198,15 @@ function renderClientResults(clients) {
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-gray-50 cursor-pointer';
         tr.dataset.clientId = c.id;
-        tr.dataset.clientName = c.business || c.nombre || '';
+        tr.dataset.clientName = getClientName(c);
         tr.dataset.clientIdentificacion = c.identificacion || '';
+        tr.dataset.clientTelefono = c.telefono || '';
+        tr.dataset.clientDireccion = c.direccion || '';
 
         tr.innerHTML = `
             <td class="px-3 py-2">
                 <div class="font-semibold text-gray-800 text-xs">
-                    ${c.business || c.nombre || 'Sin nombre'}
+                    ${getClientName(c)}
                 </div>
                 <div class="text-[11px] text-gray-400">
                     ${(c.tipo || '').toString().charAt(0).toUpperCase() + (c.tipo || '').toString().slice(1)} · ${c.ciudad || ''}
@@ -382,8 +434,10 @@ function applyClientSelection(client) {
   const quickSearch = document.getElementById('client_quick_search');
 
   const clientId = client.id;
-  const clientName = client.business || client.nombre || 'Cliente seleccionado';
-  const clientIdent = client.identificacion || '';
+  const cachedClient = getClientById(clientId) || {};
+  const mergedClient = { ...cachedClient, ...client };
+  const clientName = getClientName(mergedClient);
+  const clientIdent = mergedClient.identificacion || '';
 
   if (isConsumidorFinalByIdent(clientIdent)) {
     setConsumidorFinalUI();
@@ -394,6 +448,8 @@ function applyClientSelection(client) {
     }
     if (inputName) inputName.textContent = clientName;
     if (identEl) identEl.textContent = clientIdent || 'Sin identificación';
+    setSelectedClientDetails(mergedClient.telefono || '', mergedClient.direccion || '');
+    toggleEditSelectedClientButton(!!clientId);
   }
 
   if (quickSearch) quickSearch.value = '';
@@ -410,6 +466,8 @@ export function getSelectedClientSnapshot() {
   const inputId = document.getElementById('client_id');
   const inputName = document.getElementById('cliente_nombre');
   const identEl = document.getElementById('cliente_identificacion');
+  const phoneEl = document.getElementById('cliente_telefono');
+  const addressEl = document.getElementById('cliente_direccion');
   const emailSelect = document.getElementById('cliente_email');
   const selectedOpt = emailSelect?.selectedOptions?.[0] || null;
 
@@ -420,6 +478,8 @@ export function getSelectedClientSnapshot() {
     clientId: clientId || null,
     name: inputName?.textContent?.trim() || '',
     ident,
+    telefono: phoneEl?.textContent?.replace(/^Tel:\s*/i, '').trim() || '',
+    direccion: addressEl?.textContent?.replace(/^Dir:\s*/i, '').trim() || '',
     clientEmailId: emailSelect?.value ? String(emailSelect.value) : null,
     clientEmail: selectedOpt?.dataset?.email || selectedOpt?.text || null,
     isConsumidorFinal: !clientId || isConsumidorFinalByIdent(ident),
@@ -442,6 +502,8 @@ export async function restoreClientSelection(snapshot = null) {
   if (inputId) inputId.value = String(snapshot.clientId);
   if (inputName) inputName.textContent = snapshot.name || 'Cliente seleccionado';
   if (identEl) identEl.textContent = snapshot.ident || 'Sin identificación';
+  setSelectedClientDetails(snapshot.telefono || '', snapshot.direccion || '');
+  toggleEditSelectedClientButton(true);
 
   await loadClientEmails(snapshot.clientId, snapshot.clientEmailId || null);
 }
@@ -634,34 +696,8 @@ function setupCreateClientForm() {
 
                 // ✅ Cliente creado con éxito
                 const newClient = data.data || {};
-                // Lo agregamos al cache para que aparezca en la búsqueda
-                if (newClient.id) {
-                    allClients.push(newClient);
-                    allClientsLoaded = true;
-                }
-
-                // Seleccionar automáticamente el cliente recién creado en el POS
-                const inputId   = document.getElementById('client_id');
-                const inputName = document.getElementById('cliente_nombre');
-                const identEl   = document.getElementById('cliente_identificacion');
-
-                if (inputId) {
-                inputId.value = newClient.id;
-                inputId.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                if (inputName) {
-                inputName.textContent = newClient.business || newClient.nombre || 'Cliente creado';
-                }
-                if (identEl) {
-                identEl.textContent = newClient.identificacion || 'Sin identificación';
-                }
-
-
-
-                // Cargar correos del nuevo cliente
-                if (newClient.id) {
-                    await loadClientEmails(newClient.id);
-                }
+                upsertClientCache(newClient);
+                applyClientSelection(newClient);
 
                 // Cerrar modal
                 modal.classList.add('hidden');
@@ -733,6 +769,259 @@ window.removeCreateEmailInput = function (btn) {
     }
 };
 
+function getClientBaseUrl() {
+    return window.SALES_ROUTES?.clientIndex || '/clients';
+}
+
+function getClientUrl(id) {
+    return `${getClientBaseUrl()}/${id}`;
+}
+
+function buildEditEmailRow(value = '') {
+    const row = document.createElement('div');
+    row.className = 'flex gap-2';
+
+    const input = document.createElement('input');
+    input.type = 'email';
+    input.name = 'emails[]';
+    input.placeholder = 'correo@ejemplo.com';
+    input.value = value || '';
+    input.className = 'flex-1 border-gray-300 rounded-md shadow-sm text-sm';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '−';
+    btn.className = 'px-2 py-1 text-xs rounded-md border border-gray-300 text-red-600 hover:bg-red-50';
+    btn.addEventListener('click', () => window.removeEditEmailInput(btn));
+
+    row.appendChild(input);
+    row.appendChild(btn);
+    return row;
+}
+
+function updateEditBusiness() {
+    const modal = document.getElementById('editClientModal');
+    if (!modal) return;
+
+    const tipoSelect = modal.querySelector('select[name="tipo"]');
+    const nombres = modal.querySelector('#edit-nombres');
+    const apellidos = modal.querySelector('#edit-apellidos');
+    const razon = modal.querySelector('#edit-razon-social');
+    const businessInput = modal.querySelector('#edit-business');
+    if (!tipoSelect || !businessInput) return;
+
+    if (tipoSelect.value === 'juridico') {
+        businessInput.value = (razon?.value || '').trim();
+        return;
+    }
+
+    businessInput.value = `${(nombres?.value || '').trim()} ${(apellidos?.value || '').trim()}`.trim();
+}
+
+function syncEditPersonaFields() {
+    const modal = document.getElementById('editClientModal');
+    if (!modal) return;
+
+    const tipoSelect = modal.querySelector('select[name="tipo"]');
+    const tipoIdSelect = modal.querySelector('select[name="tipo_identificacion"]');
+    const naturalFields = modal.querySelector('#edit-natural-fields');
+    const juridicoFields = modal.querySelector('#edit-juridico-fields');
+    if (!tipoSelect) return;
+
+    const isJuridico = tipoSelect.value === 'juridico';
+    naturalFields?.classList.toggle('hidden', isJuridico);
+    juridicoFields?.classList.toggle('hidden', !isJuridico);
+
+    const cedulaOption = tipoIdSelect?.querySelector('option[value="CEDULA"]');
+    const pasaporteOption = tipoIdSelect?.querySelector('option[value="PASAPORTE"]');
+    if (cedulaOption) {
+        cedulaOption.hidden = isJuridico;
+        cedulaOption.disabled = isJuridico;
+    }
+    if (pasaporteOption) {
+        pasaporteOption.hidden = isJuridico;
+        pasaporteOption.disabled = isJuridico;
+    }
+    if (isJuridico && ['CEDULA', 'PASAPORTE'].includes(tipoIdSelect?.value)) {
+        const rucOption = tipoIdSelect.querySelector('option[value="RUC"]');
+        tipoIdSelect.value = rucOption ? 'RUC' : '';
+    }
+
+    updateEditBusiness();
+}
+
+function splitNaturalBusiness(business = '') {
+    const parts = String(business || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) {
+        return { nombres: parts[0] || '', apellidos: '' };
+    }
+
+    const apellidos = parts.pop();
+    return {
+        nombres: parts.join(' '),
+        apellidos,
+    };
+}
+
+function fillEditClientForm(client) {
+    const modal = document.getElementById('editClientModal');
+    const form = document.getElementById('editClientForm');
+    if (!modal || !form || !client) return;
+
+    form.reset();
+    form.action = getClientUrl(client.id);
+
+    form.querySelector('[name="tipo_identificacion"]').value = client.tipo_identificacion ?? '';
+    form.querySelector('[name="identificacion"]').value = client.identificacion ?? '';
+    form.querySelector('[name="telefono"]').value = client.telefono ?? '';
+    form.querySelector('[name="direccion"]').value = client.direccion ?? '';
+    form.querySelector('[name="ciudad"]').value = client.ciudad ?? '';
+    form.querySelector('[name="estado"]').value = client.estado ?? 'activo';
+
+    const tipoSelect = form.querySelector('select[name="tipo"]');
+    if (tipoSelect) tipoSelect.value = client.tipo ?? 'natural';
+
+    const business = client.business ?? client.nombre ?? '';
+    const businessHidden = modal.querySelector('#edit-business');
+    const nombresInput = modal.querySelector('#edit-nombres');
+    const apellidosInput = modal.querySelector('#edit-apellidos');
+    const razonInput = modal.querySelector('#edit-razon-social');
+
+    if (businessHidden) businessHidden.value = business;
+
+    if ((client.tipo ?? 'natural') === 'juridico') {
+        if (razonInput) razonInput.value = business;
+        if (nombresInput) nombresInput.value = '';
+        if (apellidosInput) apellidosInput.value = '';
+    } else {
+        const natural = splitNaturalBusiness(business);
+        if (nombresInput) nombresInput.value = natural.nombres;
+        if (apellidosInput) apellidosInput.value = natural.apellidos;
+        if (razonInput) razonInput.value = '';
+    }
+
+    syncEditPersonaFields();
+
+    const emailsWrapper = document.getElementById('edit-emails-wrapper');
+    if (emailsWrapper) {
+        emailsWrapper.innerHTML = '';
+        const emails = Array.isArray(client.emails) ? client.emails : [];
+        if (emails.length) {
+            emails.forEach((emailRow) => {
+                emailsWrapper.appendChild(buildEditEmailRow(emailRow?.email || emailRow || ''));
+            });
+        } else {
+            emailsWrapper.appendChild(buildEditEmailRow(''));
+        }
+    }
+}
+
+function setupEditClientForm() {
+    const modal = document.getElementById('editClientModal');
+    const form = document.getElementById('editClientForm');
+    if (!modal || !form || editClientFormInitialized) return;
+    editClientFormInitialized = true;
+
+    const tipoSelect = modal.querySelector('select[name="tipo"]');
+    tipoSelect?.addEventListener('change', syncEditPersonaFields);
+    ['#edit-nombres', '#edit-apellidos', '#edit-razon-social'].forEach((selector) => {
+        modal.querySelector(selector)?.addEventListener('input', updateEditBusiness);
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        updateEditBusiness();
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+
+        try {
+            const res = await fetch(form.action, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': window.CSRF_TOKEN,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                },
+                body: new FormData(form),
+                credentials: 'same-origin',
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const fieldErrors = data?.errors ? Object.values(data.errors).flat().join('\n') : '';
+                throw new Error(fieldErrors || data?.message || 'No se pudo actualizar el cliente.');
+            }
+
+            const updatedClient = data?.data || {};
+            upsertClientCache(updatedClient);
+            applyClientSelection(updatedClient);
+
+            window.closeEditModal();
+            showSaleAlert(data?.message || 'Cliente actualizado correctamente.');
+        } catch (error) {
+            console.error('[POS] Error al editar cliente:', error);
+            showSaleAlert(error.message || 'Error de comunicación al actualizar el cliente.', true);
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
+        }
+    });
+}
+
+window.openEditModal = async function (id) {
+    const modal = document.getElementById('editClientModal');
+    if (!modal || !id) return;
+
+    setupEditClientForm();
+
+    try {
+        const res = await fetch(getClientUrl(id), {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+
+        if (!res.ok) {
+            throw new Error('No se pudo obtener la información del cliente.');
+        }
+
+        const client = await res.json();
+        upsertClientCache(client);
+        fillEditClientForm(client);
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    } catch (error) {
+        console.error('[POS] Error cargando cliente para editar:', error);
+        showSaleAlert(error.message || 'No se pudo cargar la información del cliente.', true);
+    }
+};
+
+window.closeEditModal = function () {
+    const modal = document.getElementById('editClientModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+};
+
+window.addEditEmailInput = function () {
+    const wrapper = document.getElementById('edit-emails-wrapper');
+    if (!wrapper) return;
+    wrapper.appendChild(buildEditEmailRow(''));
+};
+
+window.removeEditEmailInput = function (btn) {
+    const wrapper = document.getElementById('edit-emails-wrapper');
+    const row = btn?.closest('div');
+    if (row && wrapper) {
+        wrapper.removeChild(row);
+    }
+    if (wrapper && wrapper.children.length === 0) {
+        wrapper.appendChild(buildEditEmailRow(''));
+    }
+};
+
 /**
  * Inicializa todo el flujo de selección/creación de clientes en el POS.
  */
@@ -741,6 +1030,7 @@ export function initClientSelector() {
 
     const searchModal = document.getElementById('client-modal');        // modal de búsqueda
     const btnCreate   = document.getElementById('btn-open-client-modal'); // botón +
+    const btnEditSelected = document.getElementById('btn-edit-selected-client');
     const createModal = document.getElementById('createClientModal');   // modal crear
     const clientIdInput = document.getElementById('client_id');
     const quickSearch = document.getElementById('client_quick_search');
@@ -755,6 +1045,14 @@ export function initClientSelector() {
         btnCreate.addEventListener('click', () => {
             console.log('[POS] Click en crear cliente');
             window.openCreateModal();
+        });
+    }
+
+    if (btnEditSelected) {
+        btnEditSelected.addEventListener('click', () => {
+            const id = clientIdInput?.value;
+            if (!id) return;
+            window.openEditModal(id);
         });
     }
 
@@ -779,6 +1077,8 @@ export function initClientSelector() {
               id: tr.dataset.clientId,
               business: tr.dataset.clientName,
               identificacion: tr.dataset.clientIdentificacion || '',
+              telefono: tr.dataset.clientTelefono || '',
+              direccion: tr.dataset.clientDireccion || '',
             });
 
             if (searchModal) {

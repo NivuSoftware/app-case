@@ -54,7 +54,7 @@ class CashierController extends Controller
 
         if (!$request->query('force') && $sessionCajaId > 0 && $returnTo) {
             $openSession = $this->service->getOpenSession($sessionCajaId);
-            if ($openSession && $this->service->canResumeSession($openSession, (int)auth()->id())) {
+            if ($openSession && $this->service->canUserResumeSession($openSession, $request->user())) {
                 $sep = str_contains($returnTo, '?') ? '&' : '?';
                 return redirect($returnTo . $sep . 'caja_id=' . $sessionCajaId);
             }
@@ -70,7 +70,7 @@ class CashierController extends Controller
 
         if ($openSession) {
             $expected = $this->service->computeExpectedAmount($openSession);
-            $canResume = $this->service->canResumeSession($openSession, (int)auth()->id());
+            $canResume = $this->service->canUserResumeSession($openSession, $request->user());
         }
 
         return view('cashier.open', [
@@ -106,7 +106,7 @@ class CashierController extends Controller
                 $v->errors()->add('opening_amount', 'El monto de apertura es obligatorio para abrir una caja nueva.');
             }
 
-            if ($openSession && !$this->service->canResumeSession($openSession, (int)auth()->id())) {
+            if ($openSession && !$this->service->canUserResumeSession($openSession, $request->user())) {
                 $v->errors()->add('caja_id', 'Esta caja ya está abierta por otro usuario. No puedes retomar esta sesión.');
             }
         });
@@ -167,7 +167,8 @@ class CashierController extends Controller
             (int)auth()->id(),
             (string)$data['type'],
             (float)$data['amount'],
-            (string)$data['reason']
+            (string)$data['reason'],
+            (bool) $request->user()?->hasRole('admin')
         );
 
         $msg = $data['type'] === 'IN' ? 'Ingreso registrado.' : 'Retiro registrado.';
@@ -189,7 +190,7 @@ class CashierController extends Controller
     public function closeView(Request $request)
     {
         $cajaId = $this->requireCajaId($request);
-        $session = $this->service->getOpenSessionOrFail($cajaId);
+        $session = $this->service->getOpenSessionForUserOrFail($cajaId, $request->user());
 
         // Para mostrar denominaciones en UI
         $denoms = $this->service->denominationMap();
@@ -233,7 +234,8 @@ class CashierController extends Controller
             $cajaId,
             (int)auth()->id(),
             $closingCount,
-            $data['notes'] ?? null
+            $data['notes'] ?? null,
+            (bool) $request->user()?->hasRole('admin')
         );
 
         $message = $session->result === 'MATCH'

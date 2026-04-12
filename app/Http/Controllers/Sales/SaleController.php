@@ -103,6 +103,8 @@ class SaleController extends Controller
             'payment.fecha_pago' => 'nullable|date',
         ]);
 
+        $data['user_id'] = (int) $request->user()->id;
+
         // Si el usuario tiene bodega asignada, forzarla
         if (auth()->user()->bodega_id) {
             $data['bodega_id'] = auth()->user()->bodega_id;

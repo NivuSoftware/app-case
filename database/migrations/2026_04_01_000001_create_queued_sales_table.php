@@ -22,8 +22,8 @@ return new class extends Migration
             $table->boolean('iva_enabled')->default(true);
             $table->json('payload_json');
             $table->string('status', 20)->default('QUEUED');
-            $table->unsignedInteger('duration_seconds')->default(40);
-            $table->unsignedInteger('remaining_seconds')->default(40);
+            $table->unsignedInteger('duration_seconds')->default(60);
+            $table->unsignedInteger('remaining_seconds')->default(60);
             $table->dateTime('execute_at')->nullable()->index();
             $table->unsignedInteger('schedule_version')->default(1);
             $table->string('reserved_num_factura', 50)->nullable()->index();
