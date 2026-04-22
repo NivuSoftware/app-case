@@ -22,7 +22,10 @@ class SendSriInvoiceMailJob implements ShouldQueue
 
     public int $tries = 3;
 
-    public function __construct(public int $saleId) {}
+    public function __construct(
+        public int $saleId,
+        public ?array $recipients = null
+    ) {}
 
     public function handle(
         RideService $rideService,
@@ -30,7 +33,7 @@ class SendSriInvoiceMailJob implements ShouldQueue
     ): void {
         $disk = (string) config('sri.documents_disk', 'local');
 
-        $sale = Sale::with(['client'])->findOrFail($this->saleId);
+        $sale = Sale::with(['client.emails', 'clientEmail'])->findOrFail($this->saleId);
         $invoice = $repo->findBySaleId($sale->id);
 
         if (!$invoice || strtoupper((string)($invoice->estado_sri ?? '')) !== 'AUTORIZADO') {
@@ -51,29 +54,66 @@ class SendSriInvoiceMailJob implements ShouldQueue
             return;
         }
 
-        $to = (string)($sale->email_destino ?? '');
-        if ($to === '') {
-            $to = (string)($sale->client->email ?? '');
+        $recipients = collect($this->recipients ?? $this->resolveRecipients($sale))
+            ->map(fn ($email) => $this->normalizeEmail((string) $email))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($recipients->isEmpty()) {
+            return;
         }
-        if ($to === '') return;
 
         try {
-            Mail::to($to)->send(new SriInvoiceAuthorizedMail(
-                $sale,
-                $invoice,
-                $ridePath,
-                $xmlPath,
-                $disk
-            ));
+            foreach ($recipients as $to) {
+                Mail::to($to)->send(new SriInvoiceAuthorizedMail(
+                    $sale,
+                    $invoice,
+                    $ridePath,
+                    $xmlPath,
+                    $disk
+                ));
+            }
         } catch (\Throwable $e) {
             Log::error('SendSriInvoiceMailJob FAIL', [
                 'sale_id' => $sale->id,
-                'to' => $to,
+                'to' => $recipients->all(),
                 'ridePath' => $ridePath,
                 'xmlPath' => $xmlPath,
                 'error' => $e->getMessage(),
             ]);
             throw $e; // para que quede en failed_jobs con el error real
         }
+    }
+
+    private function resolveRecipients(Sale $sale): array
+    {
+        $saleEmail = $this->normalizeEmail((string) ($sale->email_destino ?? ''));
+        if ($saleEmail) {
+            return [$saleEmail];
+        }
+
+        $selectedClientEmail = $this->normalizeEmail((string) ($sale->clientEmail->email ?? ''));
+        if ($selectedClientEmail) {
+            return [$selectedClientEmail];
+        }
+
+        if ($sale->relationLoaded('client') && $sale->client) {
+            foreach (($sale->client->emails ?? collect()) as $clientEmail) {
+                $email = $this->normalizeEmail((string) ($clientEmail->email ?? ''));
+                if ($email) {
+                    return [$email];
+                }
+            }
+        }
+
+        return [];
+    }
+
+    private function normalizeEmail(string $email): ?string
+    {
+        $email = mb_strtolower(trim($email));
+
+        return $email !== '' ? $email : null;
     }
 }

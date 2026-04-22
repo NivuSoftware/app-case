@@ -187,6 +187,9 @@
                                 <p class="text-[11px] text-slate-400">
                                     Detalle de la venta actual
                                 </p>
+                                <p id="cart-items-counter" class="text-[11px] text-slate-500 font-semibold">
+                                    0 productos · 0 líneas
+                                </p>
                             </div>
                             <div class="text-right">
                                 <p class="text-[11px] text-slate-500 uppercase font-semibold">Total</p>
@@ -199,13 +202,13 @@
                             <table class="min-w-full divide-y divide-slate-100 text-[13px]">
                                 <thead class="bg-slate-50">
                                     <tr>
-                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Cantidad</th>
-                                        <th class="px-3 py-2 text-left font-semibold text-slate-500 uppercase text-[10px]">Producto</th>
-                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">P. Unitario</th>
-                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">IVA</th>
-                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Descuento</th>
-                                        <th class="px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Total</th>
-                                        <th class="px-2 py-2 text-center font-semibold text-slate-500 uppercase text-[10px]">Acc.</th>
+                                        <th class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Cantidad</th>
+                                        <th class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-500 uppercase text-[10px]">Producto</th>
+                                        <th class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">P. Unitario</th>
+                                        <th class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">IVA</th>
+                                        <th class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Descuento</th>
+                                        <th class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-2 py-2 text-right font-semibold text-slate-500 uppercase text-[10px]">Total</th>
+                                        <th class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-2 py-2 text-center font-semibold text-slate-500 uppercase text-[10px]">Acc.</th>
                                     </tr>
                                 </thead>
                                 <tbody id="cart-body" class="divide-y divide-slate-100 bg-white">
@@ -237,22 +240,27 @@
 
                         {{-- TOTALES + OBSERVACIONES + COBRAR --}}
                         <footer class="border-t border-slate-100 bg-white px-4 pt-2 pb-2.5 space-y-2">
-                            <div class="space-y-1 text-[12px] text-slate-600">
-                                <div class="flex justify-between">
-                                    <span>Subtotal (sin IVA)</span>
-                                    <span id="resumen-subtotal">$ 0.00</span>
+                            <div class="grid grid-cols-2 gap-x-8 gap-y-1 text-[12px] text-slate-600">
+                                <div class="space-y-1">
+                                    <div class="flex justify-between gap-2">
+                                        <span>Subtotal (sin IVA)</span>
+                                        <span id="resumen-subtotal">$ 0.00</span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="text-[12px] text-slate-700">IVA</span>
+                                        <span id="resumen-iva">$ 0.00</span>
+                                    </div>
                                 </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-[12px] text-slate-700">IVA</span>
-                                    <span id="resumen-iva">$ 0.00</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-[12px] text-slate-700">Descuento</span>
-                                    <span id="resumen-descuento">$ 0.00</span>
-                                </div>
-                                <div class="flex justify-between font-semibold text-slate-800">
-                                    <span>Total</span>
-                                    <span id="resumen-total">$ 0.00</span>
+
+                                <div class="space-y-1">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="text-[12px] text-slate-700">Descuento</span>
+                                        <span id="resumen-descuento">$ 0.00</span>
+                                    </div>
+                                    <div class="flex justify-between gap-2 font-semibold text-slate-800">
+                                        <span>Total</span>
+                                        <span id="resumen-total">$ 0.00</span>
+                                    </div>
                                 </div>
 
                                 <input type="hidden" id="iva_enabled" value="1">

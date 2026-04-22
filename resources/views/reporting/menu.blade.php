@@ -15,6 +15,28 @@
     <div class="py-10">
         <div class="max-w-7xl mx-auto px-6 lg:px-8">
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <a href="{{ route('reporteria.invoices.index') }}"
+                    class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
+                          hover:border-blue-400 hover:shadow-lg transition">
+                    <div class="flex flex-col items-center text-center">
+                        <svg xmlns="http://www.w3.org/2000/svg"
+                            class="h-12 w-12 text-blue-700 group-hover:text-blue-800 transition" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                                d="M7 3h7l4 4v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                                d="M14 3v5h5" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                                d="M8 12h8M8 16h6" />
+                        </svg>
+                        <h3 class="mt-4 text-lg font-semibold text-blue-900">
+                            Facturas
+                        </h3>
+                        <p class="text-sm text-blue-700/70 mt-1">
+                            Listado general con filtros y acceso al RIDE
+                        </p>
+                    </div>
+                </a>
                 <a href="{{ route('reporteria.invoices.statuses') }}"
                     class="group bg-white rounded-xl p-6 shadow-sm border border-blue-100
                           hover:border-blue-400 hover:shadow-lg transition">

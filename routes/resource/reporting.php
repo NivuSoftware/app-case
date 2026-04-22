@@ -19,6 +19,14 @@ Route::middleware(['auth', 'role:admin'])
             ->name('reporteria.invoices.statuses');
         Route::get('/estados-facturas/xml-zip', [ReportingController::class, 'downloadFilteredInvoiceXmlZip'])
             ->name('reporteria.invoices.statuses.xml-zip');
+        Route::get('/facturas', [ReportingController::class, 'invoices'])
+            ->name('reporteria.invoices.index');
+        Route::get('/facturas/{saleId}/ride', [ReportingController::class, 'showRide'])
+            ->whereNumber('saleId')
+            ->name('reporteria.invoices.ride');
+        Route::post('/facturas/{saleId}/reenviar-factura', [ReportingController::class, 'resendInvoiceMail'])
+            ->whereNumber('saleId')
+            ->name('reporteria.invoices.resend');
 
         Route::get('/ventas-diarias-forma-pago', [ReportingController::class, 'dailySalesByPaymentMethod'])
             ->name('reporteria.sales.daily.by-payment');

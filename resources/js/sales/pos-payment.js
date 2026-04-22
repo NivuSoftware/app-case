@@ -202,6 +202,26 @@ function getSplitRows() {
   );
 }
 
+function normalizeSplitMethod(method = "") {
+  return String(method || "").trim().toUpperCase();
+}
+
+function formatSplitMethodLabel(method = "") {
+  return String(method || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function getSplitMethodButtons() {
+  return Array.from(
+    document.querySelectorAll("[data-split-method-button]") || []
+  );
+}
+
 function getSplitMethodCount() {
   const template = getSplitTemplate();
   const select = template?.content?.querySelector("[data-split-payment-method]");
@@ -239,30 +259,50 @@ function getSplitRowState(row) {
   };
 }
 
+function findSplitRowByMethod(method) {
+  const methodKey = normalizeSplitMethod(method);
+  return (
+    getSplitRows().find(
+      (row) => normalizeSplitMethod(getSplitRowState(row).method) === methodKey
+    ) || null
+  );
+}
+
+function focusSplitRow(row) {
+  if (!row) return;
+
+  row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  const { amount } = getSplitRowParts(row);
+  if (amount) {
+    amount.focus();
+    amount.select?.();
+  }
+}
+
 function pickDefaultSplitMethod(existingMethods = [], preferred = null) {
   const template = getSplitTemplate();
   const select = template?.content?.querySelector("[data-split-payment-method]");
   if (!select) return "";
 
-  const existing = new Set(existingMethods.map((method) => method.toUpperCase()));
+  const existing = new Set(existingMethods.map((method) => normalizeSplitMethod(method)));
   const options = Array.from(select.options).filter((option) => option.value.trim() !== "");
 
   if (preferred) {
     const preferredOption = options.find(
-      (option) => option.value.trim().toUpperCase() === preferred.toUpperCase()
+      (option) => normalizeSplitMethod(option.value) === normalizeSplitMethod(preferred)
     );
     if (preferredOption) return preferredOption.value;
   }
 
   const cashOption = options.find(
-    (option) => option.value.trim().toUpperCase() === "EFECTIVO"
+    (option) => normalizeSplitMethod(option.value) === "EFECTIVO"
   );
   if (cashOption && !existing.has("EFECTIVO")) {
     return cashOption.value;
   }
 
   return (
-    options.find((option) => !existing.has(option.value.trim().toUpperCase()))?.value || ""
+    options.find((option) => !existing.has(normalizeSplitMethod(option.value)))?.value || ""
   );
 }
 
@@ -320,10 +360,86 @@ function updateSplitControls() {
     addButton.classList.toggle("opacity-50", disable);
     addButton.classList.toggle("cursor-not-allowed", disable);
   }
+
+  updateSplitMethodButtons();
 }
 
 function updateSplitRowUI(row) {
-  return getSplitRowState(row);
+  const state = getSplitRowState(row);
+  const label = row.querySelector("[data-split-payment-method-label]");
+
+  if (label) {
+    label.textContent = state.method
+      ? formatSplitMethodLabel(state.method)
+      : "Seleccione...";
+  }
+
+  row.dataset.methodKey = normalizeSplitMethod(state.method);
+  return state;
+}
+
+function updateSplitMethodButtons() {
+  const activeMethods = new Set(
+    getSplitRows()
+      .map((row) => normalizeSplitMethod(getSplitRowState(row).method))
+      .filter(Boolean)
+  );
+
+  getSplitMethodButtons().forEach((button) => {
+    const method = button.dataset.methodValue || "";
+    const active = activeMethods.has(normalizeSplitMethod(method));
+    const icon = button.querySelector("[data-split-method-button-icon]");
+
+    button.classList.toggle("border-slate-300", !active);
+    button.classList.toggle("bg-white", !active);
+    button.classList.toggle("text-slate-800", !active);
+    button.classList.toggle("hover:bg-slate-50", !active);
+    button.classList.toggle("hover:border-slate-400", !active);
+    button.classList.toggle("border-slate-900", active);
+    button.classList.toggle("bg-slate-900", active);
+    button.classList.toggle("text-white", active);
+    button.classList.toggle("hover:bg-slate-900", active);
+    button.classList.toggle("hover:border-slate-900", active);
+
+    if (icon) {
+      icon.textContent = active ? "✓" : "+";
+      icon.classList.toggle("text-slate-400", !active);
+      icon.classList.toggle("text-white", active);
+    }
+  });
+}
+
+function setSplitBalanceCardTone(tone) {
+  const card = document.getElementById("split_payments_balance_card");
+  if (!card) return;
+
+  card.classList.remove(
+    "border-slate-200",
+    "bg-white",
+    "border-emerald-200",
+    "bg-emerald-50",
+    "border-amber-200",
+    "bg-amber-50",
+    "border-rose-200",
+    "bg-rose-50"
+  );
+
+  if (tone === "success") {
+    card.classList.add("border-emerald-200", "bg-emerald-50");
+    return;
+  }
+
+  if (tone === "danger") {
+    card.classList.add("border-rose-200", "bg-rose-50");
+    return;
+  }
+
+  if (tone === "warning") {
+    card.classList.add("border-amber-200", "bg-amber-50");
+    return;
+  }
+
+  card.classList.add("border-slate-200", "bg-white");
 }
 
 function setStatusClasses(element, tone) {
@@ -333,6 +449,7 @@ function setStatusClasses(element, tone) {
     "text-emerald-600",
     "text-amber-600",
     "text-rose-600",
+    "text-slate-500",
     "text-slate-600",
     "text-slate-800"
   );
@@ -404,10 +521,11 @@ function refreshSplitSummary() {
   const balanceCents = totalCents - declaredCents;
   const totalDeclaredEl = document.getElementById("split_payments_total_declared");
   const balanceEl = document.getElementById("split_payments_balance");
+  const balanceLabelEl = document.getElementById("split_payments_balance_label");
   const statusEl = document.getElementById("split_payments_status_message");
 
   if (totalDeclaredEl) {
-    totalDeclaredEl.textContent = formatMoney(fromCents(declaredCents));
+    totalDeclaredEl.textContent = `Declarado: ${formatMoney(fromCents(declaredCents))}`;
   }
 
   if (balanceEl) {
@@ -445,8 +563,19 @@ function refreshSplitSummary() {
   }
 
   if (balanceEl) {
+    const balanceTone =
+      balanceCents === 0 ? "success" : balanceCents < 0 ? "danger" : "warning";
+    setStatusClasses(balanceEl, balanceTone);
+    setSplitBalanceCardTone(balanceTone);
+  } else {
+    setSplitBalanceCardTone("muted");
+  }
+
+  if (balanceLabelEl) {
+    balanceLabelEl.textContent =
+      balanceCents === 0 ? "Completo" : balanceCents < 0 ? "Excedente" : "Faltante";
     setStatusClasses(
-      balanceEl,
+      balanceLabelEl,
       balanceCents === 0 ? "success" : balanceCents < 0 ? "danger" : "warning"
     );
   }
@@ -681,6 +810,7 @@ export function initPayment() {
   const simpleReceivedInput = document.getElementById("payment_modal_monto_recibido");
   const splitModal = getSplitModal();
   const splitContainer = getSplitRowsContainer();
+  const splitMethodList = document.getElementById("split_payment_method_list");
   const splitOpenButton = document.getElementById("btn-open-split-payment");
   const splitAddButton = document.getElementById("btn-add-split-payment-row");
   const splitConfirmButton = document.getElementById("btn-confirm-split-payment");
@@ -692,6 +822,8 @@ export function initPayment() {
 
   if (simpleReceivedInput) {
     simpleReceivedInput.addEventListener("input", recalcSimpleCambio);
+    simpleReceivedInput.addEventListener("focus", () => simpleReceivedInput.select());
+    simpleReceivedInput.addEventListener("click", () => simpleReceivedInput.select());
   }
 
   if (splitOpenButton) {
@@ -706,6 +838,23 @@ export function initPayment() {
 
   if (splitAddButton) {
     splitAddButton.addEventListener("click", () => addSplitRow());
+  }
+
+  if (splitMethodList) {
+    splitMethodList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-split-method-button]");
+      if (!button) return;
+
+      const method = button.dataset.methodValue || "";
+      const existingRow = findSplitRowByMethod(method);
+      if (existingRow) {
+        focusSplitRow(existingRow);
+        return;
+      }
+
+      const row = addSplitRow(method);
+      if (row) focusSplitRow(row);
+    });
   }
 
   if (splitContainer) {

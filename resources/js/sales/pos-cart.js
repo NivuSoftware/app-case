@@ -349,6 +349,11 @@ export function addOrIncrementProduct({
 
     const computed = calcLine(existing);
     Object.assign(existing, computed);
+
+    cart = [
+      existing,
+      ...cart.filter((item) => item.producto_id !== producto_id),
+    ];
   } else {
     const baseItem = {
       producto_id,
@@ -364,7 +369,7 @@ export function addOrIncrementProduct({
 
     const computed = calcLine(baseItem);
 
-    cart.push({
+    cart.unshift({
       ...baseItem,
       ...computed,
     });
@@ -497,6 +502,7 @@ function recalcSummary() {
   const ivaEl = document.getElementById('resumen-iva');
   const totEl = document.getElementById('resumen-total');
   const totalDisplayEl = document.getElementById('cart-total-display');
+  const counterEl = document.getElementById('cart-items-counter');
 
   if (subEl) subEl.textContent = formatMoney(subtotal);
   if (subBrutoEl) subBrutoEl.textContent = formatMoney(subtotal_bruto);
@@ -505,6 +511,11 @@ function recalcSummary() {
   if (ivaEl) ivaEl.textContent = formatMoney(iva);
   if (totEl) totEl.textContent = formatMoney(total);
   if (totalDisplayEl) totalDisplayEl.textContent = formatMoney(total);
+  if (counterEl) {
+    const lineas = cart.length;
+    const productos = cart.reduce((sum, item) => sum + (parseInt(item.cantidad, 10) || 0), 0);
+    counterEl.textContent = `${productos} producto${productos === 1 ? '' : 's'} · ${lineas} línea${lineas === 1 ? '' : 's'}`;
+  }
 
   window.dispatchEvent(new CustomEvent('pos:totals-updated', {
     detail: {
@@ -560,7 +571,7 @@ function renderCart() {
       </td>
 
       <td class="px-3 py-2 text-xs text-gray-700">
-        <div class="font-semibold text-gray-800">${item.descripcion}</div>
+        <div class="font-extrabold text-gray-900">${item.descripcion}</div>
         <div class="text-[10px] text-gray-400">
           ID: ${item.producto_id} · IVA: ${ivaTxt}%
         </div>
