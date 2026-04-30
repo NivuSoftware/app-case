@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Reporting;
 use App\Http\Controllers\Controller;
 use App\Services\Reporting\ReportingService;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 class ReportingController extends Controller
 {
@@ -25,6 +26,29 @@ class ReportingController extends Controller
             'invoices' => $invoices,
             'estado' => $estado,
             'q' => $q,
+        ]);
+    }
+
+    public function invoices(Request $request)
+    {
+        $payload = $this->reporting->getInvoicesReport($request);
+
+        return view('reporting.invoices.index', $payload);
+    }
+
+    public function showRide(int $saleId): Response
+    {
+        return $this->reporting->streamInvoiceRide($saleId);
+    }
+
+    public function resendInvoiceMail(Request $request, int $saleId)
+    {
+        $payload = $this->reporting->resendInvoiceMail($saleId, $request->all());
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Correo puesto en cola para reenvio.',
+            'data' => $payload,
         ]);
     }
 

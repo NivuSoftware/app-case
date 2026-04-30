@@ -28,6 +28,21 @@ class ReportingRepository
         return $this->buildInvoiceStatusesQuery($estado, $q, $maxReviewHours)->get();
     }
 
+    public function getInvoicesReport(array $filters, int $perPage = 50)
+    {
+        return $this->buildInvoicesQuery($filters)
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
+    public function findInvoiceSaleById(int $saleId): ?Sale
+    {
+        return Sale::query()
+            ->with(['client.emails', 'clientEmail', 'electronicInvoice'])
+            ->where('tipo_documento', 'FACTURA')
+            ->find($saleId);
+    }
+
     private function buildInvoiceStatusesQuery(string $estado, string $q, int $maxReviewHours): Builder
     {
         $query = ElectronicInvoice::with('sale')
@@ -50,6 +65,40 @@ class ReportingRepository
                             ->orWhere('num_factura', 'like', "%{$q}%");
                     });
             });
+        }
+
+        return $query;
+    }
+
+    private function buildInvoicesQuery(array $filters): Builder
+    {
+        $desde = $filters['desde'] ?? null;
+        $hasta = $filters['hasta'] ?? null;
+        $identificacion = trim((string) ($filters['identificacion'] ?? ''));
+        $numeroFactura = trim((string) ($filters['numero_factura'] ?? ''));
+
+        $query = Sale::query()
+            ->with(['client.emails', 'clientEmail', 'electronicInvoice'])
+            ->where('tipo_documento', 'FACTURA')
+            ->orderByDesc('fecha_venta')
+            ->orderByDesc('id');
+
+        if ($desde) {
+            $query->whereDate('fecha_venta', '>=', $desde);
+        }
+
+        if ($hasta) {
+            $query->whereDate('fecha_venta', '<=', $hasta);
+        }
+
+        if ($identificacion !== '') {
+            $query->whereHas('client', function ($clientQuery) use ($identificacion) {
+                $clientQuery->where('identificacion', 'like', "%{$identificacion}%");
+            });
+        }
+
+        if ($numeroFactura !== '') {
+            $query->where('num_factura', 'like', "%{$numeroFactura}%");
         }
 
         return $query;

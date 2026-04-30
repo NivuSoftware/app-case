@@ -2,10 +2,13 @@
 
 namespace App\Services\Reporting;
 
+use App\Jobs\SendSriInvoiceMailJob;
 use App\Models\Cashier\CashSession;
+use App\Models\Clients\ClientEmail;
 use App\Models\Sri\ElectronicInvoice;
 use App\Repositories\Reporting\ReportingRepository;
 use App\Services\Store\BodegaService;
+use App\Services\Sri\RideService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -17,7 +20,8 @@ class ReportingService
 {
     public function __construct(
         private ReportingRepository $reporting,
-        private BodegaService $bodegas
+        private BodegaService $bodegas,
+        private RideService $rideService
     )
     {
     }
@@ -135,6 +139,181 @@ class ReportingService
         $filename = "facturas_xml_filtradas_{$stamp}.zip";
 
         return response()->download($zipPath, $filename)->deleteFileAfterSend(true);
+    }
+
+    public function getInvoicesReport(Request $request): array
+    {
+        $desde = trim((string) $request->query('desde', ''));
+        $hasta = trim((string) $request->query('hasta', ''));
+        $identificacion = trim((string) $request->query('identificacion', ''));
+        $numeroFactura = trim((string) $request->query('numero_factura', ''));
+
+        $desde = $this->normalizeDate($desde);
+        $hasta = $this->normalizeDate($hasta);
+
+        $invoices = $this->reporting->getInvoicesReport([
+            'desde' => $desde,
+            'hasta' => $hasta,
+            'identificacion' => $identificacion,
+            'numero_factura' => $numeroFactura,
+        ]);
+
+        return [
+            'invoices' => $invoices,
+            'desde' => $desde,
+            'hasta' => $hasta,
+            'identificacion' => $identificacion,
+            'numero_factura' => $numeroFactura,
+        ];
+    }
+
+    public function streamInvoiceRide(int $saleId): Response
+    {
+        $disk = (string) config('sri.documents_disk', 'local');
+
+        $sale = $this->reporting->findInvoiceSaleById($saleId);
+        if (!$sale) {
+            abort(404, 'La factura no existe.');
+        }
+
+        $invoice = $sale->electronicInvoice;
+        if (!$invoice) {
+            abort(404, 'La factura no tiene comprobante electronico asociado.');
+        }
+
+        $ridePath = (string) ($invoice->ride_pdf_path ?? '');
+        if ($ridePath === '' || !Storage::disk($disk)->exists($ridePath)) {
+            $estadoSri = strtoupper((string) ($invoice->estado_sri ?? ''));
+            if ($estadoSri !== 'AUTORIZADO') {
+                abort(404, 'El RIDE no esta disponible para esta factura.');
+            }
+
+            $ridePath = $this->rideService->generateForSale($sale->id);
+            $invoice->refresh();
+        }
+
+        $filename = (string) ($sale->num_factura ?: ('RIDE_' . $sale->id));
+        $filename = preg_replace('/[^A-Za-z0-9._-]/', '_', $filename) ?: ('RIDE_' . $sale->id);
+
+        if ($disk === 's3') {
+            $url = Storage::disk($disk)->temporaryUrl(
+                $ridePath,
+                now()->addMinutes(10),
+                [
+                    'ResponseContentType' => 'application/pdf',
+                    'ResponseContentDisposition' => 'inline; filename="' . $filename . '.pdf"',
+                ]
+            );
+
+            return redirect()->away($url);
+        }
+
+        return Storage::disk($disk)->response(
+            $ridePath,
+            $filename . '.pdf',
+            ['Content-Type' => 'application/pdf'],
+            'inline'
+        );
+    }
+
+    public function resendInvoiceMail(int $saleId, array $data): array
+    {
+        $sale = $this->reporting->findInvoiceSaleById($saleId);
+        if (!$sale) {
+            abort(404, 'La factura no existe.');
+        }
+
+        $invoice = $sale->electronicInvoice;
+        if (!$invoice || strtoupper((string) ($invoice->estado_sri ?? '')) !== 'AUTORIZADO') {
+            abort(422, 'Solo se puede reenviar una factura AUTORIZADA.');
+        }
+
+        $validated = validator($data, [
+            'email_destino' => ['required', 'email:rfc', 'max:191'],
+            'selected_emails' => ['nullable', 'array'],
+            'selected_emails.*' => ['nullable', 'email:rfc', 'max:191'],
+            'new_emails' => ['nullable', 'array'],
+            'new_emails.*' => ['nullable', 'email:rfc', 'max:191'],
+        ])->validate();
+
+        $primaryEmail = $this->normalizeEmail((string) ($validated['email_destino'] ?? ''));
+        $selectedEmails = collect($validated['selected_emails'] ?? [])
+            ->map(fn ($email) => $this->normalizeEmail((string) $email))
+            ->filter()
+            ->values();
+        $newEmails = collect($validated['new_emails'] ?? [])
+            ->map(fn ($email) => $this->normalizeEmail((string) $email))
+            ->filter()
+            ->values();
+
+        $recipients = collect([$primaryEmail])
+            ->merge($selectedEmails)
+            ->merge($newEmails)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($recipients->isEmpty()) {
+            abort(422, 'Debes indicar al menos un correo válido.');
+        }
+
+        $sale->email_destino = $primaryEmail;
+        $sale->save();
+
+        if ($sale->client) {
+            $existing = $sale->client->emails()
+                ->pluck('email')
+                ->map(fn ($email) => $this->normalizeEmail((string) $email))
+                ->filter()
+                ->all();
+
+            $toPersist = $recipients
+                ->diff($existing)
+                ->values();
+
+            foreach ($toPersist as $email) {
+                ClientEmail::create([
+                    'client_id' => $sale->client->id,
+                    'email' => $email,
+                ]);
+            }
+
+            $matchId = $sale->client->emails()
+                ->whereRaw('LOWER(email) = ?', [strtolower($primaryEmail)])
+                ->value('id');
+
+            if ($matchId) {
+                $sale->client_email_id = $matchId;
+                $sale->save();
+            }
+        }
+
+        SendSriInvoiceMailJob::dispatch($sale->id, $recipients->all());
+
+        return [
+            'sale_id' => $sale->id,
+            'recipients' => $recipients->all(),
+        ];
+    }
+
+    private function normalizeDate(string $value): ?string
+    {
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->toDateString();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function normalizeEmail(string $email): ?string
+    {
+        $email = mb_strtolower(trim($email));
+
+        return $email !== '' ? $email : null;
     }
 
     public function getDailySalesByPaymentMethod(Request $request): array

@@ -147,20 +147,23 @@ class ProductRepository
         }
 
         if ($search !== null && $search !== '') {
-            $searchExact = $search;
-            $searchPrefix = $search . '%';
-            $searchLike = '%' . $search . '%';
+            $normalizedSearch = ProductSearch::normalize($search);
+            $normalizedPrefix = $normalizedSearch . '%';
+            $normalizedLike = '%' . $normalizedSearch . '%';
+            $nombreExpr = ProductSearch::normalizedExpression('nombre');
+            $codigoInternoExpr = ProductSearch::normalizedExpression('codigo_interno');
+            $codigoBarrasExpr = ProductSearch::normalizedExpression('codigo_barras');
             ProductSearch::apply($query, $search);
 
             // Prioriza codigo exacto, luego prefijo de codigo y finalmente nombre.
             $query->orderByRaw(
                 "CASE
-                    WHEN codigo_interno = ? OR codigo_barras = ? THEN 0
-                    WHEN codigo_interno LIKE ? OR codigo_barras LIKE ? THEN 1
-                    WHEN nombre LIKE ? THEN 2
+                    WHEN {$codigoInternoExpr} = ? OR {$codigoBarrasExpr} = ? THEN 0
+                    WHEN {$codigoInternoExpr} LIKE ? OR {$codigoBarrasExpr} LIKE ? THEN 1
+                    WHEN {$nombreExpr} LIKE ? THEN 2
                     ELSE 3
                 END",
-                [$searchExact, $searchExact, $searchPrefix, $searchPrefix, $searchLike]
+                [$normalizedSearch, $normalizedSearch, $normalizedPrefix, $normalizedPrefix, $normalizedLike]
             );
         }
 
